@@ -53,6 +53,7 @@ import {
   Participant,
   RoundSummary,
   TableIdentity,
+  TableMutation,
   TableRecord,
   TeamMetric,
 } from "@/lib/types";
@@ -136,6 +137,44 @@ function remoteTableIsNewer(local: TableRecord, remote: TableRecord) {
   if (!Number.isFinite(remoteTime)) return false;
   if (!Number.isFinite(localTime)) return true;
   return remoteTime > localTime;
+}
+
+function mergeConcurrentTable(local: TableRecord, remote: TableRecord) {
+  if (tablesMatch(local, remote)) return local;
+
+  // Joins and votes are independent while a round is open, so merge those
+  // additive changes instead of replacing one with an older snapshot.
+  const remoteIsNewer = remoteTableIsNewer(local, remote);
+  const sameOpenRound = local.currentRound.id === remote.currentRound.id
+    && !local.currentRound.revealed
+    && !remote.currentRound.revealed;
+
+  if (!sameOpenRound) return remoteIsNewer ? remote : local;
+
+  const base = remoteIsNewer ? remote : local;
+  const incoming = remoteIsNewer ? local : remote;
+  const baseMembers = new Map(base.members.map((member) => [member.id, member]));
+  const incomingMembers = new Map(incoming.members.map((member) => [member.id, member]));
+  const members = [
+    ...base.members,
+    ...incoming.members.filter((member) => !baseMembers.has(member.id)),
+  ];
+  const votes = { ...base.currentRound.votes };
+
+  for (const [participantId, value] of Object.entries(incoming.currentRound.votes)) {
+    const baseMember = baseMembers.get(participantId);
+    const incomingMember = incomingMembers.get(participantId);
+    const canPreserveVote = !remoteIsNewer
+      ? Boolean(incomingMember && (!baseMember || baseMember.isDealer === incomingMember.isDealer))
+      : Boolean(baseMember && incomingMember && baseMember.isDealer === incomingMember.isDealer);
+    if (canPreserveVote && votes[participantId] === undefined) votes[participantId] = value;
+  }
+
+  return {
+    ...base,
+    members,
+    currentRound: { ...base.currentRound, votes },
+  };
 }
 
 function memberColor(index: number) {
@@ -238,22 +277,25 @@ export default function TableRoom({ slug }: { slug: string }) {
     setTaskValue(value);
   }
 
-  function commitTable(updater: (current: TableRecord) => TableRecord) {
-    const current = tableRef.current;
+  function commitTable(updater: (current: TableRecord) => TableRecord, mutation?: TableMutation) {
+    const current = getTable(slug) ?? tableRef.current;
     if (!current) return;
     const next = saveTable(updater(current));
     tableRef.current = next;
     setTable(next);
     persistQueueRef.current = persistQueueRef.current
       .catch(() => undefined)
-      .then(() => persistRemoteTable(next));
+      .then(() => persistRemoteTable(next, mutation));
     broadcastTableChange(next.slug);
   }
 
   applyRemoteTableRef.current = (remoteTable) => {
     const localTable = tableRef.current;
-    if (localTable && !remoteTableIsNewer(localTable, remoteTable)) return;
-    const nextTable = saveTable(remoteTable, { announce: false, touch: false });
+    const nextTable = saveTable(
+      localTable ? mergeConcurrentTable(localTable, remoteTable) : remoteTable,
+      { announce: false, touch: false },
+    );
+    if (localTable && tablesMatch(localTable, nextTable)) return;
     tableRef.current = nextTable;
     setTable(nextTable);
     if (!taskEditingRef.current) setTaskDraft(nextTable.currentRound.task);
@@ -350,24 +392,31 @@ export default function TableRoom({ slug }: { slug: string }) {
       setJoinError("Your name is needed to take a seat.");
       return;
     }
-    const existingIdentity = identity && table.members.some((member) => member.id === identity.participantId) ? identity : null;
+    const latestTable = getTable(slug) ?? tableRef.current ?? table;
+    const existingMember = identity
+      ? latestTable.members.find((member) => member.id === identity.participantId)
+      : undefined;
+    const existingIdentity = existingMember ? identity : null;
     const participantId = existingIdentity?.participantId ?? randomId("member");
     const joinedAt = new Date().toISOString();
-    const nextIdentity: TableIdentity = {
-      tableSlug: slug,
-      participantId,
+    const participant: Participant = {
+      id: participantId,
       name,
       team: joinForm.team.trim(),
-      isCreator: false,
-      isDealer: false,
+      isCreator: existingMember?.isCreator ?? false,
+      isDealer: existingMember?.isDealer ?? false,
+      joinedAt: existingMember?.joinedAt ?? joinedAt,
+      lastSeenAt: joinedAt,
     };
+    const nextIdentity: TableIdentity = { tableSlug: slug, participantId, name, team: participant.team, isCreator: participant.isCreator, isDealer: participant.isDealer };
     commitTable((current) => ({
       ...current,
       members: current.members.some((member) => member.id === participantId)
-        ? current.members.map((member) => member.id === participantId ? { ...member, name, team: joinForm.team.trim(), lastSeenAt: joinedAt } : member)
-        : [...current.members, { id: participantId, name, team: joinForm.team.trim(), isCreator: false, isDealer: false, joinedAt, lastSeenAt: joinedAt }],
-    }));
+        ? current.members.map((member) => member.id === participantId ? { ...member, name, team: participant.team, lastSeenAt: joinedAt } : member)
+        : [...current.members, participant],
+    }), { type: "join", participant });
     writeIdentity(slug, nextIdentity);
+    identityRef.current = nextIdentity;
     setIdentity(nextIdentity);
     setJoinOpen(false);
     setJoinError("");
@@ -454,6 +503,7 @@ export default function TableRoom({ slug }: { slug: string }) {
     const nextIdentity = identity ? { ...identity, isDealer: nextDealer } : null;
     if (nextIdentity) {
       writeIdentity(slug, nextIdentity);
+      identityRef.current = nextIdentity;
       setIdentity(nextIdentity);
     }
   }

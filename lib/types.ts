@@ -56,6 +56,11 @@ export interface TableIdentity {
   isDealer: boolean;
 }
 
+export type TableMutation = {
+  type: "join";
+  participant: Participant;
+};
+
 export interface TeamMetric {
   team: string;
   alignment: number;

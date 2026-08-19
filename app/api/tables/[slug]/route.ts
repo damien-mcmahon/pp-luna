@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { loadTableFromSupabase, saveTableToSupabase } from "@/lib/server-tables";
-import { TableRecord } from "@/lib/types";
+import { loadTableFromSupabase, saveParticipantToSupabase, saveTableToSupabase } from "@/lib/server-tables";
+import { TableMutation, TableRecord } from "@/lib/types";
 
 type RouteContext = { params: { slug: string } };
 
@@ -23,10 +23,18 @@ export async function PUT(request: Request, context: RouteContext) {
   }
 
   try {
-    const table = (await request.json()) as TableRecord;
+    const body = (await request.json()) as TableRecord | { table: TableRecord; mutation?: TableMutation };
+    const table = "table" in body ? body.table : body;
+    const mutation = "table" in body ? body.mutation : undefined;
     if (table.slug !== context.params.slug) {
       return NextResponse.json({ error: "Table slug mismatch." }, { status: 400 });
     }
+
+    if (mutation?.type === "join") {
+      const persistedTable = await saveParticipantToSupabase(client, table, mutation.participant);
+      return NextResponse.json(persistedTable);
+    }
+
     await saveTableToSupabase(client, table);
     return NextResponse.json(table);
   } catch (error) {

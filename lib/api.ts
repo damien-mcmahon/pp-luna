@@ -1,4 +1,4 @@
-import { TableRecord } from "@/lib/types";
+import { TableMutation, TableRecord } from "@/lib/types";
 
 async function parseResponse<T>(response: Response) {
   if (!response.ok) return null;
@@ -16,12 +16,12 @@ export async function fetchRemoteTable(slug: string) {
   }
 }
 
-export async function persistRemoteTable(table: TableRecord) {
+export async function persistRemoteTable(table: TableRecord, mutation?: TableMutation) {
   try {
     await fetch(`/api/tables/${encodeURIComponent(table.slug)}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(table),
+      body: JSON.stringify(mutation ? { table, mutation } : table),
     });
   } catch {
     // The local store is the offline/demo fallback.

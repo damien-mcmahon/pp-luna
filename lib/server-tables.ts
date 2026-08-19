@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { Round, RoundSummary, TableRecord } from "@/lib/types";
+import { Participant, Round, RoundSummary, TableRecord } from "@/lib/types";
 
 function tablePayload(table: TableRecord) {
   return {
@@ -79,6 +79,43 @@ export async function saveTableToSupabase(client: SupabaseClient, table: TableRe
   }
 
   return table;
+}
+
+export async function saveParticipantToSupabase(
+  client: SupabaseClient,
+  table: TableRecord,
+  participant: Participant,
+) {
+  const tableResult = await client
+    .from("tables")
+    .select("id")
+    .eq("slug", table.slug)
+    .maybeSingle();
+  if (tableResult.error) throw tableResult.error;
+
+  // A join only changes the roster. Avoid rewriting rounds and votes from the
+  // joiner's potentially older snapshot.
+  if (!tableResult.data) return saveTableToSupabase(client, table);
+
+  const participantResult = await client.from("participants").upsert({
+    id: participant.id,
+    table_id: tableResult.data.id,
+    name: participant.name,
+    team: participant.team || null,
+    is_creator: participant.isCreator,
+    is_dealer: participant.isDealer,
+    joined_at: participant.joinedAt,
+    last_seen_at: participant.lastSeenAt,
+  });
+  if (participantResult.error) throw participantResult.error;
+
+  const touchResult = await client
+    .from("tables")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", tableResult.data.id);
+  if (touchResult.error) throw touchResult.error;
+
+  return (await loadTableFromSupabase(client, table.slug)) ?? table;
 }
 
 function alignmentForVotes(votes: Record<string, number>) {
