@@ -33,7 +33,9 @@ The browser subscribes to table, participant, round, and vote changes over Supab
 
 - Create a named table and choose `Play the hand` or `Deal only`.
 - Share `/table/<slug>` with the rest of the room.
-- New seats provide a name and optional team. The seat is remembered in a cookie for that table on that device.
+- Visitors can either take a seat or watch as a spectator without joining the roster. Spectators see live table state but cannot vote or reveal cards.
+- New seats provide a name and optional team. The seat or spectator role is remembered in a cookie for that table on that device.
+- Tables support up to 20 seats. Larger rooms use a compact perimeter layout, and revealed hands show every participant in a responsive card grid.
 - Fibonacci cards are `1, 2, 3, 5, 8, 13, 21`.
 - The creator can deal, remove players, rename the room, copy the invite, and switch between participant and dealer mode.
 - Revealing counts down from 3, turns every card face up, and calculates table/team alignment, average score, and session coherence.

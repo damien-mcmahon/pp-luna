@@ -20,6 +20,7 @@ import {
   Copy,
   Crown,
   Edit3,
+  Eye,
   ExternalLink,
   Flame,
   Info,
@@ -57,6 +58,9 @@ import {
   TableRecord,
   TeamMetric,
 } from "@/lib/types";
+
+const MAX_TABLE_MEMBERS = 20;
+const DENSE_SEAT_THRESHOLD = 8;
 
 function alignmentForVotes(votes: Record<string, number>) {
   const values = Object.values(votes);
@@ -139,6 +143,12 @@ function remoteTableIsNewer(local: TableRecord, remote: TableRecord) {
   return remoteTime > localTime;
 }
 
+function identityCanViewTable(table: TableRecord, identity: TableIdentity | null) {
+  if (!identity) return false;
+  if (identity.role === "spectator") return true;
+  return table.members.some((member) => member.id === identity.participantId);
+}
+
 function mergeConcurrentTable(local: TableRecord, remote: TableRecord) {
   if (tablesMatch(local, remote)) return local;
 
@@ -181,6 +191,14 @@ function memberColor(index: number) {
   return ["coral", "blue", "gold", "lavender", "mint", "rose", "sky", "orange"][index % 8];
 }
 
+function denseSeatStyle(index: number, total: number) {
+  const angle = -Math.PI / 2 + (index / total) * Math.PI * 2;
+  return {
+    "--seat-x": `${(50 + Math.cos(angle) * 43).toFixed(2)}%`,
+    "--seat-y": `${(54.5 + Math.sin(angle) * 32).toFixed(2)}%`,
+  } as React.CSSProperties;
+}
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -194,8 +212,9 @@ function MetricBar({ value, tone = "gold", compact = false }: { value: number; t
   return <span className={`power-bar ${compact ? "power-bar-compact" : ""}`}><i className={`power-fill power-${tone}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /><b>{value}%</b></span>;
 }
 
-function SeatCard({ member, voted, revealed, vote, color, isYou, index }: { member: Participant; voted: boolean; revealed: boolean; vote?: number; color: string; isYou: boolean; index: number }) {
-  return <div className={`table-seat seat-position-${index % 8} ${isYou ? "seat-is-you" : ""}`}>
+function SeatCard({ member, voted, revealed, vote, color, isYou, index, total }: { member: Participant; voted: boolean; revealed: boolean; vote?: number; color: string; isYou: boolean; index: number; total: number }) {
+  const isDense = total > DENSE_SEAT_THRESHOLD;
+  return <div className={`table-seat ${isDense ? "seat-dense" : `seat-position-${index % 8}`} ${isYou ? "seat-is-you" : ""}`} style={isDense ? denseSeatStyle(index, total) : undefined}>
     <div className={`seat-person ${member.isDealer ? "seat-dealer" : ""}`}>
       <span className={`seat-avatar avatar-${color}`}>{initials(member.name)}</span>
       <span className="seat-copy"><b>{member.name}{isYou && <em>YOU</em>}</b><small>{member.isDealer ? "Dealer" : member.team || "Solo seat"}</small></span>
@@ -260,6 +279,7 @@ export default function TableRoom({ slug }: { slug: string }) {
   const applyRemoteTableRef = useRef<(remoteTable: TableRecord) => void>(() => undefined);
 
   const currentMember = table?.members.find((member) => member.id === identity?.participantId);
+  const isSpectator = identity?.role === "spectator";
   const isCreator = Boolean(currentMember?.isCreator && table?.creatorId === currentMember.id);
   const isDealer = Boolean(currentMember?.isDealer);
   const tableName = table?.name;
@@ -301,7 +321,7 @@ export default function TableRoom({ slug }: { slug: string }) {
     if (!taskEditingRef.current) setTaskDraft(nextTable.currentRound.task);
 
     const nextIdentity = identityRef.current;
-    const nextJoinOpen = !nextIdentity || !nextTable.members.some((member) => member.id === nextIdentity.participantId);
+    const nextJoinOpen = !identityCanViewTable(nextTable, nextIdentity);
     setJoinOpen((current) => current === nextJoinOpen ? current : nextJoinOpen);
   };
 
@@ -316,7 +336,7 @@ export default function TableRoom({ slug }: { slug: string }) {
     }
     identityRef.current = localIdentity;
     setIdentity(localIdentity);
-    setJoinOpen(Boolean(localTable && (!localIdentity || !localTable.members.some((member) => member.id === localIdentity.participantId))));
+    setJoinOpen(Boolean(localTable && !identityCanViewTable(localTable, localIdentity)));
 
     void fetchRemoteTable(slug).then((remoteTable) => {
       if (!mounted || !remoteTable) return;
@@ -325,7 +345,7 @@ export default function TableRoom({ slug }: { slug: string }) {
       identityRef.current = nextIdentity;
       setIdentity(nextIdentity);
       const currentTable = tableRef.current;
-      setJoinOpen(Boolean(currentTable && (!nextIdentity || !currentTable.members.some((member) => member.id === nextIdentity.participantId))));
+      setJoinOpen(Boolean(currentTable && !identityCanViewTable(currentTable, nextIdentity)));
     }).finally(() => {
       if (mounted) setRemoteLoading(false);
     });
@@ -396,6 +416,10 @@ export default function TableRoom({ slug }: { slug: string }) {
     const existingMember = identity
       ? latestTable.members.find((member) => member.id === identity.participantId)
       : undefined;
+    if (!existingMember && latestTable.members.length >= MAX_TABLE_MEMBERS) {
+      setJoinError(`This table is full. ${MAX_TABLE_MEMBERS} players maximum.`);
+      return;
+    }
     const existingIdentity = existingMember ? identity : null;
     const participantId = existingIdentity?.participantId ?? randomId("member");
     const joinedAt = new Date().toISOString();
@@ -408,7 +432,7 @@ export default function TableRoom({ slug }: { slug: string }) {
       joinedAt: existingMember?.joinedAt ?? joinedAt,
       lastSeenAt: joinedAt,
     };
-    const nextIdentity: TableIdentity = { tableSlug: slug, participantId, name, team: participant.team, isCreator: participant.isCreator, isDealer: participant.isDealer };
+    const nextIdentity: TableIdentity = { tableSlug: slug, participantId, name, team: participant.team, isCreator: participant.isCreator, isDealer: participant.isDealer, role: "participant" };
     commitTable((current) => ({
       ...current,
       members: current.members.some((member) => member.id === participantId)
@@ -420,6 +444,31 @@ export default function TableRoom({ slug }: { slug: string }) {
     setIdentity(nextIdentity);
     setJoinOpen(false);
     setJoinError("");
+  }
+
+  function watchAsSpectator() {
+    const nextIdentity: TableIdentity = {
+      tableSlug: slug,
+      participantId: randomId("spectator"),
+      name: "Spectator",
+      team: "",
+      isCreator: false,
+      isDealer: false,
+      role: "spectator",
+    };
+    writeIdentity(slug, nextIdentity);
+    identityRef.current = nextIdentity;
+    setIdentity(nextIdentity);
+    setJoinOpen(false);
+    setJoinError("");
+  }
+
+  function joinAsParticipant() {
+    clearIdentity(slug);
+    identityRef.current = null;
+    setIdentity(null);
+    setJoinError("");
+    setJoinOpen(true);
   }
 
   function selectVote(value: number) {
@@ -537,14 +586,14 @@ export default function TableRoom({ slug }: { slug: string }) {
     <header className="room-nav page-width">
       <button className="brand-lockup" onClick={() => router.push("/")} aria-label="Back to home"><span className="brand-mark"><Spade size={18} fill="currentColor" /></span><span><strong>DEALER&apos;S CHOICE</strong><small>PLANNING POKER</small></span></button>
       <div className="room-breadcrumb"><span>TABLES</span><ChevronRight size={14} /><b>{table.name}</b></div>
-      <div className="room-nav-actions"><span className="live-pill"><i /> LIVE <b>ROUND {String(table.currentRound.number).padStart(2, "0")}</b></span><button className="icon-button" onClick={copyTableLink} aria-label="Copy table link" title="Copy invite link">{copied ? <Check size={17} /> : <Link2 size={17} />}</button><button className="icon-button mobile-menu-button" onClick={() => setManageOpen(true)} aria-label="Open table menu"><Menu size={19} /></button><span className={`nav-user-avatar avatar-${memberColor(table.members.findIndex((member) => member.id === currentMember?.id))}`}>{currentMember ? initials(currentMember.name) : "?"}</span></div>
+      <div className="room-nav-actions"><span className="live-pill"><i /> {isSpectator ? "WATCHING" : "LIVE"} <b>ROUND {String(table.currentRound.number).padStart(2, "0")}</b></span><button className="icon-button" onClick={copyTableLink} aria-label="Copy table link" title="Copy invite link">{copied ? <Check size={17} /> : <Link2 size={17} />}</button><button className="icon-button mobile-menu-button" onClick={() => setManageOpen(true)} aria-label="Open table menu"><Menu size={19} /></button><span className={`nav-user-avatar ${isSpectator ? "nav-spectator" : currentMember ? `avatar-${memberColor(table.members.findIndex((member) => member.id === currentMember.id))}` : ""}`} aria-label={isSpectator ? "Spectator" : currentMember?.name ?? "Unassigned seat"}>{isSpectator ? <Eye size={14} /> : currentMember ? initials(currentMember.name) : "?"}</span></div>
     </header>
 
     <div className="room-layout page-width">
       <section className="room-main">
-        <div className="room-heading"><div><div className="eyebrow"><span className="eyebrow-dot" /> TABLE {table.slug.toUpperCase()}</div><h1>{table.currentRound.revealed ? "The hand is on the table." : "Keep your cards close."}</h1><p>{table.currentRound.revealed ? "The room has spoken. Read the signal, then deal the next task." : "Choose your estimate in private. The dealer will call the reveal."}</p></div><button className="share-button" onClick={copyTableLink}>{copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Link copied" : "Share invite"}</button></div>
+        <div className="room-heading"><div><div className="eyebrow"><span className="eyebrow-dot" /> TABLE {table.slug.toUpperCase()}</div><h1>{table.currentRound.revealed ? "The hand is on the table." : "Keep your cards close."}</h1><p>{table.currentRound.revealed ? "The room has spoken. Read the signal, then deal the next task." : isSpectator ? "Follow every card and reveal in real time. You are watching only." : "Choose your estimate in private. The dealer will call the reveal."}</p></div><button className="share-button" onClick={copyTableLink}>{copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Link copied" : "Share invite"}</button></div>
 
-        <section className="felt-table" aria-label={`${table.name} planning poker table`}>
+        <section className={`felt-table ${table.members.length > DENSE_SEAT_THRESHOLD ? "felt-table-crowded" : ""}`} aria-label={`${table.name} planning poker table`}>
           <div className="felt-stitch" />
           <div className="felt-header"><span><span className="table-pip" /> DEALER&apos;S TABLE</span><span className="felt-header-right">FIBONACCI <i /> 1 — 21</span></div>
           <div className="felt-task">
@@ -554,29 +603,29 @@ export default function TableRoom({ slug }: { slug: string }) {
           </div>
 
           <div className="seat-stage">
-            {table.members.map((member, index) => <SeatCard key={member.id} member={member} voted={table.currentRound.votes[member.id] !== undefined} revealed={table.currentRound.revealed} vote={table.currentRound.votes[member.id]} color={memberColor(index)} isYou={member.id === identity?.participantId} index={index} />)}
+            {table.members.map((member, index) => <SeatCard key={member.id} member={member} voted={table.currentRound.votes[member.id] !== undefined} revealed={table.currentRound.revealed} vote={table.currentRound.votes[member.id]} color={memberColor(index)} isYou={member.id === identity?.participantId} index={index} total={table.members.length} />)}
           </div>
 
           <div className={`table-center ${table.currentRound.revealed ? "center-revealed" : ""}`}>
             {!table.currentRound.revealed ? <>
               <div className="center-emblem"><span><Spade size={23} fill="currentColor" /></span><small>THE HOUSE</small></div>
-              <span className="center-status">{isDealer ? "YOU ARE DEALING" : `${votedCount} OF ${activeParticipants.length} CARDS DEALT`}</span>
+              <span className="center-status">{isSpectator ? "YOU ARE WATCHING" : isDealer ? "YOU ARE DEALING" : `${votedCount} OF ${activeParticipants.length} CARDS DEALT`}</span>
               <div className="center-action">
-                {isCreator ? <button className="reveal-button" onClick={revealCards} disabled={!allVoted || countdown !== null}><span className="reveal-button-icon">{countdown !== null ? countdown : <Play size={15} fill="currentColor" />}</span><span><b>{countdown !== null ? "REVEALING..." : "SHOW ALL CARDS"}</b><small>{allVoted ? "The table is ready" : `Waiting on ${Math.max(0, activeParticipants.length - votedCount)} ${activeParticipants.length - votedCount === 1 ? "vote" : "votes"}`}</small></span><ArrowRight size={16} /></button> : <div className="waiting-dealer"><Clock3 size={15} /><span>Waiting for the dealer to reveal</span></div>}
+                {isCreator ? <button className="reveal-button" onClick={revealCards} disabled={!allVoted || countdown !== null}><span className="reveal-button-icon">{countdown !== null ? countdown : <Play size={15} fill="currentColor" />}</span><span><b>{countdown !== null ? "REVEALING..." : "SHOW ALL CARDS"}</b><small>{allVoted ? "The table is ready" : `Waiting on ${Math.max(0, activeParticipants.length - votedCount)} ${activeParticipants.length - votedCount === 1 ? "vote" : "votes"}`}</small></span><ArrowRight size={16} /></button> : <div className="waiting-dealer">{isSpectator ? <Eye size={15} /> : <Clock3 size={15} />}<span>{isSpectator ? "Watching the dealer reveal" : "Waiting for the dealer to reveal"}</span></div>}
               </div>
             </> : <>
               <div className="revealed-kicker"><span className="table-pip gold-pip" /> HAND REVEALED <span className="table-pip gold-pip" /></div>
-              <div className="revealed-cards">{activeParticipants.slice(0, 7).map((member, index) => <div className="revealed-card" key={member.id} style={{ "--reveal-index": index } as React.CSSProperties}><span>{table.currentRound.votes[member.id] ?? "—"}</span><small>{member.name.split(" ")[0]}</small></div>)}</div>
+              <div className={`revealed-cards ${activeParticipants.length > 7 ? "revealed-cards-many" : ""}`}>{activeParticipants.map((member, index) => <div className="revealed-card" key={member.id} style={{ "--reveal-index": index } as React.CSSProperties}><span>{table.currentRound.votes[member.id] ?? "—"}</span><small>{member.name.split(" ")[0]}</small></div>)}</div>
               <div className="center-results"><div><small>TABLE ALIGNMENT</small><strong>{alignment}%</strong><MetricBar value={alignment} /></div><div><small>AVERAGE SCORE</small><strong>{displayAverage(average)}</strong><span className="result-spark">{table.currentRound.votes && Object.keys(table.currentRound.votes).length} votes in</span></div></div>
               {isCreator && <div className="revealed-actions"><button className="button button-primary" onClick={() => startNextRound(false)}><RefreshCw size={15} /> Replay hand</button><button className="button button-ghost-light" onClick={() => startNextRound(true)}><Trash2 size={15} /> Clear table</button></div>}
-              {!isCreator && <div className="waiting-dealer revealed-note"><Check size={15} /><span>The dealer is choosing what&apos;s next</span></div>}
+              {!isCreator && <div className="waiting-dealer revealed-note">{isSpectator ? <><Eye size={15} /><span>You are watching the table</span></> : <><Check size={15} /><span>The dealer is choosing what&apos;s next</span></>}</div>}
             </>}
           </div>
           {countdown !== null && <div className="reveal-overlay"><div className="countdown-ring"><span>{countdown}</span></div><b>THE DEALER IS REVEALING</b><small>Hold your nerve.</small></div>}
         </section>
 
-        {!isDealer && !table.currentRound.revealed && <section className="hand-section"><div className="hand-heading"><div><div className="eyebrow">YOUR HAND <span className="hand-live-dot" /></div><h2>Pick your estimate.</h2></div><span>{currentMember && table.currentRound.votes[currentMember.id] !== undefined ? <><Check size={14} /> Card dealt face down</> : "Tap a card to deal it"}</span></div><div className="card-fan">{FIBONACCI_VALUES.map((value, index) => <PokerCard key={value} value={value} index={index} selected={currentMember ? table.currentRound.votes[currentMember.id] === value : false} disabled={!currentMember || table.currentRound.revealed || countdown !== null} onSelect={() => selectVote(value)} />)}</div><div className="hand-footer"><span><ShieldCheck size={14} /> Your vote stays private until the reveal.</span><span>FIBONACCI DECK <i /> 7 CARDS</span></div></section>}
-        {isDealer && !table.currentRound.revealed && <section className="dealer-hand"><div className="dealer-hand-icon"><Crown size={21} /></div><div><div className="eyebrow">DEALER MODE</div><h2>You run the reveal.</h2><p>Participants are choosing their cards. When the table is ready, reveal the hand above.</p></div><span className="dealer-hand-status"><i /> {votedCount}/{activeParticipants.length} ready</span></section>}
+        {!isSpectator && !isDealer && !table.currentRound.revealed && <section className="hand-section"><div className="hand-heading"><div><div className="eyebrow">YOUR HAND <span className="hand-live-dot" /></div><h2>Pick your estimate.</h2></div><span>{currentMember && table.currentRound.votes[currentMember.id] !== undefined ? <><Check size={14} /> Card dealt face down</> : "Tap a card to deal it"}</span></div><div className="card-fan">{FIBONACCI_VALUES.map((value, index) => <PokerCard key={value} value={value} index={index} selected={currentMember ? table.currentRound.votes[currentMember.id] === value : false} disabled={!currentMember || table.currentRound.revealed || countdown !== null} onSelect={() => selectVote(value)} />)}</div><div className="hand-footer"><span><ShieldCheck size={14} /> Your vote stays private until the reveal.</span><span>FIBONACCI DECK <i /> 7 CARDS</span></div></section>}
+        {!isSpectator && isDealer && !table.currentRound.revealed && <section className="dealer-hand"><div className="dealer-hand-icon"><Crown size={21} /></div><div><div className="eyebrow">DEALER MODE</div><h2>You run the reveal.</h2><p>Participants are choosing their cards. When the table is ready, reveal the hand above.</p></div><span className="dealer-hand-status"><i /> {votedCount}/{activeParticipants.length} ready</span></section>}
       </section>
 
       <aside className="room-sidebar">
@@ -586,11 +635,11 @@ export default function TableRoom({ slug }: { slug: string }) {
 
         <section className="sidebar-panel ledger-panel"><RoundLedger history={table.history} current={table.currentRound} /></section>
 
-        <section className="sidebar-footer"><button onClick={() => setManageOpen(true)}><Settings2 size={15} /> {isCreator ? "Manage table" : "Table details"}<ChevronRight size={14} /></button><button onClick={leaveTable}><LogOut size={15} /> Leave table</button></section>
+        <section className="sidebar-footer"><button onClick={() => setManageOpen(true)}><Settings2 size={15} /> {isCreator ? "Manage table" : "Table details"}<ChevronRight size={14} /></button>{isSpectator && <button onClick={joinAsParticipant}><UserPlus size={15} /> Join as player<ChevronRight size={14} /></button>}<button onClick={leaveTable}><LogOut size={15} /> Leave table</button></section>
       </aside>
     </div>
 
-    {joinOpen && <div className="modal-backdrop join-backdrop"><section className="join-modal" role="dialog" aria-modal="true" aria-labelledby="join-title"><div className="join-card-suit"><Spade size={22} fill="currentColor" /></div><div className="eyebrow">YOU&apos;RE INVITED</div><h2 id="join-title">Take a seat at<br /><em>{table.name}</em></h2><p>Tell the table who just walked in. Your name is saved on this device for this room.</p><form onSubmit={joinTable}><label>Your name<input autoFocus value={joinForm.name} onChange={(event) => setJoinForm({ ...joinForm, name: event.target.value })} placeholder="e.g. Sam Lee" /></label><label>Team <small>OPTIONAL</small><input value={joinForm.team} onChange={(event) => setJoinForm({ ...joinForm, team: event.target.value })} placeholder="e.g. Design" /></label>{joinError && <div className="form-error">{joinError}</div>}<button className="button button-primary modal-submit" type="submit">Join the table <ArrowRight size={16} /></button></form><div className="join-privacy"><ShieldCheck size={13} /> You can change your details from your seat.</div></section></div>}
+    {joinOpen && <div className="modal-backdrop join-backdrop"><section className="join-modal" role="dialog" aria-modal="true" aria-labelledby="join-title"><div className="join-card-suit"><Spade size={22} fill="currentColor" /></div><div className="eyebrow">YOU&apos;RE INVITED</div><h2 id="join-title">Take a seat at<br /><em>{table.name}</em></h2><p>Tell the table who just walked in. Your name is saved on this device for this room.</p><form onSubmit={joinTable}><label>Your name<input autoFocus value={joinForm.name} onChange={(event) => setJoinForm({ ...joinForm, name: event.target.value })} placeholder="e.g. Sam Lee" /></label><label>Team <small>OPTIONAL</small><input value={joinForm.team} onChange={(event) => setJoinForm({ ...joinForm, team: event.target.value })} placeholder="e.g. Design" /></label>{joinError && <div className="form-error">{joinError}</div>}<button className="button button-primary modal-submit" type="submit">Join the table <ArrowRight size={16} /></button></form><div className="spectator-option"><span>Just here to follow along?</span><button type="button" onClick={watchAsSpectator}><Eye size={15} /> Watch as spectator <ArrowRight size={15} /></button></div><div className="join-privacy"><ShieldCheck size={13} /> You can change your details from your seat.</div></section></div>}
 
     {manageOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setManageOpen(false); }}><section className="manage-modal" role="dialog" aria-modal="true" aria-labelledby="manage-title"><div className="manage-header"><div><div className="eyebrow">{isCreator ? "HOUSE CONTROL" : "TABLE INFO"}</div><h2 id="manage-title">{isCreator ? "Manage the table." : "Table details."}</h2></div><button className="modal-close" onClick={() => setManageOpen(false)} aria-label="Close"><X size={18} /></button></div>{isCreator ? <><label>Table name<div className="inline-input"><input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} /><button onClick={() => { saveTableName(); setManageOpen(false); }}><Check size={15} /></button></div></label><div className="manage-option"><span className="manage-option-icon"><Crown size={16} /></span><span><b>Your role</b><small>{isDealer ? "Dealer only · You call the reveal" : "Participant · You vote with the room"}</small></span><button className="role-toggle" onClick={toggleOwnRole}>{isDealer ? "Play hand" : "Deal only"}</button></div><div className="manage-invite"><div><div className="eyebrow">PRIVATE INVITE LINK</div><p>Anyone with this link can take an open seat.</p></div><button className="button button-ghost" onClick={copyTableLink}>{copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Copied" : "Copy link"}</button></div><div className="manage-members"><div className="subpanel-label">REMOVE PLAYERS</div>{table.members.filter((member) => !member.isCreator).map((member) => <div className="manage-member" key={member.id}><span className={`roster-avatar avatar-${memberColor(table.members.indexOf(member))}`}>{initials(member.name)}</span><span><b>{member.name}</b><small>{member.team || "No team"}</small></span><button onClick={() => removeMember(member.id)}><Trash2 size={14} /></button></div>)}{table.members.filter((member) => !member.isCreator).length === 0 && <p className="no-members">No invited players yet. Share the link to deal them in.</p>}</div></> : <><div className="table-info-grid"><div><small>TABLE</small><b>{table.name}</b></div><div><small>ROUND</small><b>{String(table.currentRound.number).padStart(2, "0")}</b></div><div><small>CREATED BY</small><b>{table.members.find((member) => member.isCreator)?.name ?? "Dealer"}</b></div><div><small>DECK</small><b>Fibonacci</b></div></div><div className="manage-invite"><div><div className="eyebrow">WANT TO BRING SOMEONE IN?</div><p>Ask the dealer for the invite link.</p></div><button className="button button-ghost" onClick={copyTableLink}><Copy size={15} /> Copy link</button></div></>}<button className="manage-close" onClick={() => setManageOpen(false)}>Close panel</button></section></div>}
   </main>;

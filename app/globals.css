@@ -247,8 +247,49 @@ input { outline: none; }
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
+.nav-spectator { display: grid; place-items: center; color: var(--mint); background: rgba(141,216,172,.12); }
+.spectator-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; padding-top: 17px; border-top: 1px solid var(--line); color: #858b81; font-size: 11px; }
+.spectator-option button { display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 0; color: var(--mint); background: transparent; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.spectator-option button:hover { color: #b8f0c8; }
+
 /* Keep the legacy fan transforms from moving the visual card's fixed slot. */
 .poker-card-hit .poker-card { transform: translateX(-50%) rotate(calc((var(--card-index) - 3) * 9deg)) translateY(calc(abs(var(--card-index) - 3) * 9px)) !important; }
 .poker-card-hit:hover:not(:disabled) .poker-card, .poker-card-hit:focus-visible:not(:disabled) .poker-card { transform: translateX(-50%) rotate(0deg) translateY(-46px) scale(1.04) !important; }
 .poker-card-hit.poker-card-selected .poker-card { transform: translateX(-50%) rotate(0deg) translateY(-34px) scale(1.06) !important; }
 .poker-card-hit.poker-card-selected:hover .poker-card, .poker-card-hit.poker-card-selected:focus-visible .poker-card { transform: translateX(-50%) rotate(0deg) translateY(-46px) scale(1.08) !important; }
+
+/* Dense tables use a compact ring so every seat remains visible up to the room limit. */
+.felt-table-crowded { min-height: 780px; }
+.felt-table-crowded .table-center { top: 51%; width: min(68%, 520px); }
+.felt-table-crowded .center-revealed { top: 51%; }
+.table-seat.seat-dense { top: var(--seat-y); left: var(--seat-x); right: auto; bottom: auto; display: flex; width: 92px; min-width: 0; transform: translate(-50%, -50%); flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.table-seat.seat-dense .seat-person { flex-direction: column; align-items: center; gap: 3px; }
+.table-seat.seat-dense .seat-copy { align-items: center; max-width: 92px; text-align: center; }
+.table-seat.seat-dense .seat-copy b { justify-content: center; max-width: 92px; overflow: hidden; font-size: 9px; text-overflow: ellipsis; }
+.table-seat.seat-dense .seat-copy small { max-width: 92px; text-align: center; }
+.table-seat.seat-dense .seat-presence { margin-left: 0; }
+.table-seat.seat-dense .seat-card { width: 28px; height: 40px; flex: 0 0 auto; }
+.revealed-cards-many { display: grid !important; width: min(100%, 380px); height: auto; grid-template-columns: repeat(5, minmax(0, 1fr)); grid-auto-rows: 46px; gap: 6px; margin-inline: auto; }
+.revealed-cards-many .revealed-card { position: relative; inset: auto; width: auto; min-width: 0; height: 46px; margin: 0; transform: none; }
+.revealed-cards-many .revealed-card span { font-size: 19px; }
+.revealed-cards-many .revealed-card small { max-width: 100%; overflow: hidden; font-size: 6px; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 1120px) {
+  .felt-table-crowded { min-height: 740px; }
+  .table-seat.seat-dense { width: 82px; }
+  .table-seat.seat-dense .seat-copy, .table-seat.seat-dense .seat-copy b, .table-seat.seat-dense .seat-copy small { max-width: 82px; }
+}
+
+@media (max-width: 600px) {
+  .felt-table-crowded { min-height: 720px; }
+  .felt-table-crowded .table-center { top: 50%; width: 76%; }
+  .table-seat.seat-dense { width: 60px; gap: 2px; }
+  .table-seat.seat-dense .seat-avatar { width: 23px; height: 23px; }
+  .table-seat.seat-dense .seat-copy, .table-seat.seat-dense .seat-copy b, .table-seat.seat-dense .seat-copy small { max-width: 60px; }
+  .table-seat.seat-dense .seat-copy b { font-size: 8px; }
+  .table-seat.seat-dense .seat-copy small { font-size: 5px; }
+  .table-seat.seat-dense .seat-card { width: 22px; height: 31px; }
+  .revealed-cards-many { width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: 39px; gap: 4px; }
+  .revealed-cards-many .revealed-card { height: 39px; }
+  .revealed-cards-many .revealed-card span { font-size: 16px; }
+}

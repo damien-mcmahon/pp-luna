@@ -100,6 +100,7 @@ export function createTableRecord({
     team: creator.team,
     isCreator: true,
     isDealer: creator.isDealer,
+    role: "participant",
   });
 
   return table;

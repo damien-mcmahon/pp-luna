@@ -54,6 +54,7 @@ export interface TableIdentity {
   team: string;
   isCreator: boolean;
   isDealer: boolean;
+  role?: "participant" | "spectator";
 }
 
 export type TableMutation = {
