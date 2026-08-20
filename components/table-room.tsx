@@ -195,8 +195,12 @@ function denseSeatStyle(index: number, total: number) {
   const angle = -Math.PI / 2 + (index / total) * Math.PI * 2;
   return {
     "--seat-x": `${(50 + Math.cos(angle) * 43).toFixed(2)}%`,
-    "--seat-y": `${(54.5 + Math.sin(angle) * 32).toFixed(2)}%`,
+    "--seat-y": `${(55 + Math.sin(angle) * 30).toFixed(2)}%`,
   } as React.CSSProperties;
+}
+
+function taskInputWidth(value: string) {
+  return `${Math.max(18, Math.min(56, value.trim().length + 2))}ch`;
 }
 
 function initials(name: string) {
@@ -596,9 +600,9 @@ export default function TableRoom({ slug }: { slug: string }) {
         <section className={`felt-table ${table.members.length > DENSE_SEAT_THRESHOLD ? "felt-table-crowded" : ""}`} aria-label={`${table.name} planning poker table`}>
           <div className="felt-stitch" />
           <div className="felt-header"><span><span className="table-pip" /> DEALER&apos;S TABLE</span><span className="felt-header-right">FIBONACCI <i /> 1 — 21</span></div>
-          <div className="felt-task">
+          <div className={`felt-task ${isCreator && !table.currentRound.revealed ? "felt-task-editable" : ""}`}>
             <span className="felt-task-kicker">ROUND {String(table.currentRound.number).padStart(2, "0")} / CURRENT TASK</span>
-            {isCreator && !table.currentRound.revealed ? <input value={taskValue} onFocus={() => { taskEditingRef.current = true; }} onChange={(event) => setTaskDraft(event.target.value)} onBlur={saveTask} onKeyDown={onTaskKeyDown} placeholder="Name the task you are estimating..." aria-label="Current task" /> : <strong>{table.currentRound.task || "Task name coming from the dealer"}</strong>}
+            {isCreator && !table.currentRound.revealed ? <input className="task-input-autosize" value={taskValue} style={{ width: taskInputWidth(taskValue) }} onFocus={() => { taskEditingRef.current = true; }} onChange={(event) => setTaskDraft(event.target.value)} onBlur={saveTask} onKeyDown={onTaskKeyDown} placeholder="Name the task you are estimating..." aria-label="Current task" /> : <strong>{table.currentRound.task || "Task name coming from the dealer"}</strong>}
             {isCreator && !table.currentRound.revealed && <span className="task-edit-hint"><Edit3 size={12} /> {taskValue ? "Edit task" : "Add task"}</span>}
           </div>
 
