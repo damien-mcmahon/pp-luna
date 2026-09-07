@@ -382,14 +382,14 @@ export default function TableRoom({ slug }: { slug: string }) {
       return;
     }
 
-    const startTime = new Date(revealStartedAt).getTime();
-    const revealAt = startTime + 2700;
-    const updateCountdown = () => {
-      const elapsed = Date.now() - startTime;
-      setCountdown(elapsed >= 2700 ? null : Math.max(1, 3 - Math.floor(elapsed / 900)));
-    };
-    updateCountdown();
-    const timer = window.setTimeout(() => {
+    let remaining = 3;
+    setCountdown(remaining);
+    const countdownTimer = window.setInterval(() => {
+      remaining -= 1;
+      setCountdown(remaining > 0 ? remaining : null);
+      if (remaining <= 0) window.clearInterval(countdownTimer);
+    }, 900);
+    const revealTimer = window.setTimeout(() => {
       setCountdown(null);
       if (isCreator) {
         commitTable((current) => {
@@ -402,10 +402,13 @@ export default function TableRoom({ slug }: { slug: string }) {
           };
         });
       }
-    }, Math.max(0, revealAt - Date.now()));
+    }, 2700);
 
-    return () => window.clearTimeout(timer);
-    // The reveal timestamp is shared room state, so every connected client can show the countdown.
+    return () => {
+      window.clearInterval(countdownTimer);
+      window.clearTimeout(revealTimer);
+    };
+    // The shared timestamp starts a local countdown; its exact timing is not synchronized.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [table?.currentRound.revealStartedAt, table?.currentRound.revealed, isCreator]);
 
