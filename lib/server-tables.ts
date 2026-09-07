@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { Participant, Round, RoundSummary, TableRecord } from "@/lib/types";
+import { Participant, Round, RoundSummary, TableMutation, TableRecord } from "@/lib/types";
 
 function tablePayload(table: TableRecord) {
   return {
@@ -71,14 +71,69 @@ export async function saveTableToSupabase(client: SupabaseClient, table: TableRe
       value,
     })),
   );
-  const deleteVotesResult = await client.from("votes").delete().eq("table_id", table.id);
-  if (deleteVotesResult.error) throw deleteVotesResult.error;
   if (voteRows.length > 0) {
-    const voteResult = await client.from("votes").insert(voteRows);
+    // Votes are additive while a hand is open. Deleting the whole vote set
+    // here lets concurrent player snapshots erase one another.
+    const voteResult = await client
+      .from("votes")
+      .upsert(voteRows, { onConflict: "round_id,participant_id" });
     if (voteResult.error) throw voteResult.error;
   }
 
   return table;
+}
+
+export async function saveVoteToSupabase(
+  client: SupabaseClient,
+  table: TableRecord,
+  mutation: Extract<TableMutation, { type: "vote" }>,
+) {
+  const tableResult = await client
+    .from("tables")
+    .select("id")
+    .eq("slug", table.slug)
+    .maybeSingle();
+  if (tableResult.error) throw tableResult.error;
+
+  if (!tableResult.data) return saveTableToSupabase(client, table);
+
+  const [roundResult, participantResult] = await Promise.all([
+    client
+      .from("rounds")
+      .select("id, revealed")
+      .eq("id", mutation.roundId)
+      .eq("table_id", tableResult.data.id)
+      .maybeSingle(),
+    client
+      .from("participants")
+      .select("id, is_dealer")
+      .eq("id", mutation.participantId)
+      .eq("table_id", tableResult.data.id)
+      .maybeSingle(),
+  ]);
+  if (roundResult.error) throw roundResult.error;
+  if (participantResult.error) throw participantResult.error;
+
+  // Ignore a delayed vote once the dealer has turned this round over.
+  if (!roundResult.data || roundResult.data.revealed || !participantResult.data || participantResult.data.is_dealer) {
+    return (await loadTableFromSupabase(client, table.slug)) ?? table;
+  }
+
+  const voteResult = await client.from("votes").upsert({
+    round_id: mutation.roundId,
+    table_id: tableResult.data.id,
+    participant_id: mutation.participantId,
+    value: mutation.value,
+  }, { onConflict: "round_id,participant_id" });
+  if (voteResult.error) throw voteResult.error;
+
+  const touchResult = await client
+    .from("tables")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", tableResult.data.id);
+  if (touchResult.error) throw touchResult.error;
+
+  return (await loadTableFromSupabase(client, table.slug)) ?? table;
 }
 
 export async function saveParticipantToSupabase(

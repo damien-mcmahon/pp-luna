@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { loadTableFromSupabase, saveParticipantToSupabase, saveTableToSupabase } from "@/lib/server-tables";
+import { loadTableFromSupabase, saveParticipantToSupabase, saveTableToSupabase, saveVoteToSupabase } from "@/lib/server-tables";
 import { TableMutation, TableRecord } from "@/lib/types";
 
 type RouteContext = { params: { slug: string } };
@@ -32,6 +32,11 @@ export async function PUT(request: Request, context: RouteContext) {
 
     if (mutation?.type === "join") {
       const persistedTable = await saveParticipantToSupabase(client, table, mutation.participant);
+      return NextResponse.json(persistedTable);
+    }
+
+    if (mutation?.type === "vote") {
+      const persistedTable = await saveVoteToSupabase(client, table, mutation);
       return NextResponse.json(persistedTable);
     }
 

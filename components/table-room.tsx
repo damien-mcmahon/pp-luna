@@ -152,14 +152,12 @@ function identityCanViewTable(table: TableRecord, identity: TableIdentity | null
 function mergeConcurrentTable(local: TableRecord, remote: TableRecord) {
   if (tablesMatch(local, remote)) return local;
 
-  // Joins and votes are independent while a round is open, so merge those
-  // additive changes instead of replacing one with an older snapshot.
+  // Votes are independent changes. Keep the union for the same round even
+  // during the reveal so an incomplete snapshot cannot hide known cards.
   const remoteIsNewer = remoteTableIsNewer(local, remote);
-  const sameOpenRound = local.currentRound.id === remote.currentRound.id
-    && !local.currentRound.revealed
-    && !remote.currentRound.revealed;
+  const sameRound = local.currentRound.id === remote.currentRound.id;
 
-  if (!sameOpenRound) return remoteIsNewer ? remote : local;
+  if (!sameRound) return remoteIsNewer ? remote : local;
 
   const base = remoteIsNewer ? remote : local;
   const incoming = remoteIsNewer ? local : remote;
@@ -183,7 +181,15 @@ function mergeConcurrentTable(local: TableRecord, remote: TableRecord) {
   return {
     ...base,
     members,
-    currentRound: { ...base.currentRound, votes },
+    currentRound: {
+      ...base.currentRound,
+      revealed: local.currentRound.revealed || remote.currentRound.revealed,
+      revealedAt: base.currentRound.revealedAt ?? incoming.currentRound.revealedAt,
+      revealStartedAt: local.currentRound.revealed || remote.currentRound.revealed
+        ? undefined
+        : base.currentRound.revealStartedAt ?? incoming.currentRound.revealStartedAt,
+      votes,
+    },
   };
 }
 
@@ -478,8 +484,10 @@ export default function TableRoom({ slug }: { slug: string }) {
     setJoinOpen(true);
   }
 
-  function selectVote(value: number) {
+  function selectVote(value: typeof FIBONACCI_VALUES[number]) {
     if (!table || !currentMember || currentMember.isDealer || table.currentRound.revealed || countdown !== null) return;
+    const roundId = table.currentRound.id;
+    const participantId = currentMember.id;
     commitTable((current) => ({
       ...current,
       currentRound: {
@@ -487,7 +495,7 @@ export default function TableRoom({ slug }: { slug: string }) {
         votes: { ...current.currentRound.votes, [currentMember.id]: value },
       },
       members: current.members.map((member) => member.id === currentMember.id ? { ...member, lastSeenAt: new Date().toISOString() } : member),
-    }));
+    }), { type: "vote", roundId, participantId, value });
   }
 
   function saveTask() {

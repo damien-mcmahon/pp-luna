@@ -57,10 +57,17 @@ export interface TableIdentity {
   role?: "participant" | "spectator";
 }
 
-export type TableMutation = {
-  type: "join";
-  participant: Participant;
-};
+export type TableMutation =
+  | {
+      type: "join";
+      participant: Participant;
+    }
+  | {
+      type: "vote";
+      roundId: string;
+      participantId: string;
+      value: FibonacciValue;
+    };
 
 export interface TeamMetric {
   team: string;
