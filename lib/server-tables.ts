@@ -119,12 +119,18 @@ export async function saveVoteToSupabase(
     return (await loadTableFromSupabase(client, table.slug)) ?? table;
   }
 
-  const voteResult = await client.from("votes").upsert({
-    round_id: mutation.roundId,
-    table_id: tableResult.data.id,
-    participant_id: mutation.participantId,
-    value: mutation.value,
-  }, { onConflict: "round_id,participant_id" });
+  const voteResult = mutation.value === null
+    ? await client
+      .from("votes")
+      .delete()
+      .eq("round_id", mutation.roundId)
+      .eq("participant_id", mutation.participantId)
+    : await client.from("votes").upsert({
+      round_id: mutation.roundId,
+      table_id: tableResult.data.id,
+      participant_id: mutation.participantId,
+      value: mutation.value,
+    }, { onConflict: "round_id,participant_id" });
   if (voteResult.error) throw voteResult.error;
 
   const touchResult = await client
