@@ -599,7 +599,7 @@ export default function TableRoom({ slug }: { slug: string }) {
   return <main className="room-page">
     <div className="noise" aria-hidden="true" />
     <header className="room-nav page-width">
-      <button className="brand-lockup" onClick={() => router.push("/")} aria-label="Back to home"><span className="brand-mark"><Spade size={18} fill="currentColor" /></span><span><strong>DEALER&apos;S CHOICE</strong><small>PLANNING POKER</small></span></button>
+      <button className="brand-lockup" onClick={() => router.push("/")} aria-label="Back to home"><span className="brand-mark"><Spade size={18} fill="currentColor" /></span><span><strong>VEGAS</strong><small>PLANNING POKER</small></span></button>
       <div className="room-breadcrumb"><span>TABLES</span><ChevronRight size={14} /><b>{table.name}</b></div>
       <div className="room-nav-actions"><span className="live-pill"><i /> {isSpectator ? "WATCHING" : "LIVE"} <b>ROUND {String(table.currentRound.number).padStart(2, "0")}</b></span><button className="icon-button" onClick={copyTableLink} aria-label="Copy table link" title="Copy invite link">{copied ? <Check size={17} /> : <Link2 size={17} />}</button><button className="icon-button mobile-menu-button" onClick={() => setManageOpen(true)} aria-label="Open table menu"><Menu size={19} /></button><span className={`nav-user-avatar ${isSpectator ? "nav-spectator" : currentMember ? `avatar-${memberColor(table.members.findIndex((member) => member.id === currentMember.id))}` : ""}`} aria-label={isSpectator ? "Spectator" : currentMember?.name ?? "Unassigned seat"}>{isSpectator ? <Eye size={14} /> : currentMember ? initials(currentMember.name) : "?"}</span></div>
     </header>

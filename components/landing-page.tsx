@@ -96,10 +96,10 @@ export default function LandingPage() {
     <main className="landing-page">
       <div className="noise" aria-hidden="true" />
       <nav className="landing-nav page-width">
-        <button className="brand-lockup" onClick={() => router.push("/")} aria-label="Dealer's Choice home">
+        <button className="brand-lockup" onClick={() => router.push("/")} aria-label="Vegas home">
           <span className="brand-mark"><Spade size={19} fill="currentColor" /></span>
           <span>
-            <strong>DEALER&apos;S CHOICE</strong>
+            <strong>VEGAS</strong>
             <small>PLANNING POKER</small>
           </span>
         </button>
@@ -170,7 +170,7 @@ export default function LandingPage() {
       </section>
 
       <section className="feature-section page-width" id="how-it-works">
-        <div className="section-heading"><div><div className="eyebrow">THE HOUSE RULES</div><h2>Make the reveal <em>mean something.</em></h2></div><p>Less admin. More thoughtful estimates. Dealer&apos;s Choice keeps the ritual, removes the friction.</p></div>
+        <div className="section-heading"><div><div className="eyebrow">THE HOUSE RULES</div><h2>Make the reveal <em>mean something.</em></h2></div><p>Less admin. More thoughtful estimates. Vegas keeps the ritual, removes the friction.</p></div>
         <div className="feature-grid">
           {featureCards.map(({ icon: Icon, eyebrow, title, text, color }) => (
             <article className={`feature-card feature-${color}`} key={title}>
@@ -185,7 +185,7 @@ export default function LandingPage() {
         {recentTables.length > 0 ? <div className="recent-list">{recentTables.map((table) => <button key={table.slug} onClick={() => router.push(`/table/${table.slug}`)}><span className="recent-icon"><Spade size={17} fill="currentColor" /></span><span><b>{table.name}</b><small>{table.members.length} {table.members.length === 1 ? "seat" : "seats"} · Round {String(table.currentRound.number).padStart(2, "0")}</small></span><ChevronRight size={17} /></button>)}</div> : <div className="empty-tables"><Clipboard size={18} /><span>Your tables will appear here after you deal your first hand.</span><button onClick={() => setCreateOpen(true)}>Open a table <ArrowRight size={15} /></button></div>}
       </section>
 
-      <footer className="landing-footer page-width"><span><span className="brand-mark small"><Spade size={13} fill="currentColor" /></span> DEALER&apos;S CHOICE</span><span>ESTIMATE WITH INTENT <i /> © 2025</span></footer>
+      <footer className="landing-footer page-width"><span><span className="brand-mark small"><Spade size={13} fill="currentColor" /></span> VEGAS</span><span>ESTIMATE WITH INTENT <i /> © 2025</span></footer>
 
       {createOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false); }}>
         <section className="create-modal" role="dialog" aria-modal="true" aria-labelledby="create-title">
