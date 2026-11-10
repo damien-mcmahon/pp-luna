@@ -1,4 +1,4 @@
-# Dealer's Choice
+# Vegas
 
 Vegas-inspired realtime planning poker for teams.
 

@@ -66,7 +66,7 @@ export type TableMutation =
       type: "vote";
       roundId: string;
       participantId: string;
-      value: FibonacciValue;
+      value: FibonacciValue | null;
     };
 
 export interface TeamMetric {

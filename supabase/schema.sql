@@ -1,4 +1,4 @@
--- Dealer's Choice uses a relational model. Run this in a new Supabase project,
+-- Vegas uses a relational model. Run this in a new Supabase project,
 -- then add the values in .env.local to enable hosted persistence and Realtime.
 
 create table if not exists public.tables (

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dealer's Choice | Planning Poker",
+  title: "Vegas | Planning Poker",
   description: "A live, Vegas-inspired planning poker table for teams that estimate together.",
 };
 
