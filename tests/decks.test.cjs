@@ -1,20 +1,6 @@
 const assert = require("node:assert/strict");
-const { readFileSync } = require("node:fs");
-const path = require("node:path");
 const { test } = require("node:test");
-const ts = require("typescript");
-
-// Load the TypeScript helpers without adding a test-runner dependency.
-function loadModule(name) {
-  const filename = path.join(__dirname, "..", `${name}.ts`);
-  const source = ts.transpileModule(readFileSync(filename, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-  }).outputText;
-  const module = { exports: {} };
-  const resolve = (id) => id.startsWith("@/") ? loadModule(id.slice(2)) : require(id);
-  new Function("require", "module", "exports", source)(resolve, module, module.exports);
-  return module.exports;
-}
+const { loadModule } = require("./helpers.cjs");
 
 const { DECKS } = loadModule("lib/types");
 const { alignmentForVotes, averageForVotes, mostCommonSizes } = loadModule("lib/voting");
