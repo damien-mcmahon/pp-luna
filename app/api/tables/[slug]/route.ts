@@ -1,84 +1,46 @@
-import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-server";
-import { loadTableFromSupabase, saveParticipantToSupabase, saveTableToSupabase, saveVoteToSupabase } from "@/lib/server-tables";
-import { TableMutation, TableRecord } from "@/lib/types";
+import { loadTableFromSupabase } from "@/lib/server-tables";
+import { hashSeatToken, newSeatToken, seatToken, setSeatCookie } from "@/lib/table-security";
+import { privateJson, readJson, sameOrigin } from "@/lib/http-security";
+// Keep legacy URLs protected too; the console uses the dedicated admin routes.
+export { PATCH, DELETE } from "@/app/api/admin/tables/[slug]/route";
+
+export const dynamic = "force-dynamic";
 
 type RouteContext = { params: { slug: string } };
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function GET(request: Request, context: RouteContext) {
   const client = getSupabaseAdmin();
-  if (!client) {
-    return NextResponse.json({ error: "Hosted persistence is not configured." }, { status: 503 });
+  if (!client) return privateJson({ error: "Hosted persistence is not configured." }, 503);
+  try {
+    const token = seatToken(request, context.params.slug);
+    const table = await loadTableFromSupabase(client, context.params.slug, token ? hashSeatToken(token) : undefined);
+    return table ? privateJson(table) : privateJson({ error: "Table not found." }, 404);
+  } catch {
+    return privateJson({ error: "Unable to load table." }, 503);
   }
-
-  const table = await loadTableFromSupabase(client, context.params.slug);
-  if (!table) return NextResponse.json({ error: "Table not found." }, { status: 404 });
-  return NextResponse.json(table);
 }
 
 export async function PUT(request: Request, context: RouteContext) {
+  if (!sameOrigin(request)) return privateJson({ error: "Invalid origin." }, 403);
   const client = getSupabaseAdmin();
-  if (!client) {
-    return NextResponse.json({ error: "Hosted persistence is not configured." }, { status: 503 });
-  }
-
+  if (!client) return privateJson({ error: "Hosted persistence is not configured." }, 503);
   try {
-    const body = (await request.json()) as TableRecord | { table: TableRecord; mutation?: TableMutation };
-    const table = "table" in body ? body.table : body;
-    const mutation = "table" in body ? body.mutation : undefined;
-    if (table.slug !== context.params.slug) {
-      return NextResponse.json({ error: "Table slug mismatch." }, { status: 400 });
+    const { mutation } = await readJson(request);
+    if (!mutation || typeof mutation.type !== "string") return privateJson({ error: "An explicit action is required." }, 400);
+    let token = seatToken(request, context.params.slug);
+    if (!token && mutation.type !== "join") return privateJson({ error: "Take a seat before performing this action." }, 401);
+    token ??= newSeatToken();
+    const result = await client.rpc("mutate_planning_table", {
+      p_slug: context.params.slug, p_token_hash: hashSeatToken(token), p_action: mutation.type, p_payload: mutation,
+    });
+    if (result.error) {
+      const status = result.error.code === "42501" ? 403 : result.error.code === "P0002" ? 404 : 400;
+      return privateJson({ error: status === 403 ? "This action is not allowed for your seat." : "Unable to apply action. Refresh the table and try again." }, status);
     }
-
-    if (mutation?.type === "join") {
-      const persistedTable = await saveParticipantToSupabase(client, table, mutation.participant);
-      return NextResponse.json(persistedTable);
-    }
-
-    if (mutation?.type === "vote") {
-      const persistedTable = await saveVoteToSupabase(client, table, mutation);
-      return NextResponse.json(persistedTable);
-    }
-
-    await saveTableToSupabase(client, table);
-    return NextResponse.json(table);
-  } catch (error) {
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unable to save table." },
-      { status: 400 },
-    );
+    const table = await loadTableFromSupabase(client, context.params.slug, hashSeatToken(token));
+    return setSeatCookie(privateJson(table), context.params.slug, token);
+  } catch {
+    return privateJson({ error: "Invalid table action." }, 400);
   }
-}
-
-export async function PATCH(request: Request, context: RouteContext) {
-  if (!request.headers.get("cookie")?.includes("dealers-choice-admin=admin")) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  }
-  const client = getSupabaseAdmin();
-  if (!client) {
-    return NextResponse.json({ error: "Hosted persistence is not configured." }, { status: 503 });
-  }
-
-  const body = (await request.json()) as { name?: string };
-  if (!body.name?.trim()) return NextResponse.json({ error: "A table name is required." }, { status: 400 });
-  const result = await client
-    .from("tables")
-    .update({ name: body.name.trim(), updated_at: new Date().toISOString() })
-    .eq("slug", context.params.slug)
-    .select("*")
-    .maybeSingle();
-  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 400 });
-  if (!result.data) return NextResponse.json({ error: "Table not found." }, { status: 404 });
-  return NextResponse.json(result.data);
-}
-
-export async function DELETE(_request: Request, context: RouteContext) {
-  const client = getSupabaseAdmin();
-  if (!client) {
-    return NextResponse.json({ error: "Hosted persistence is not configured." }, { status: 503 });
-  }
-
-  const result = await client.from("tables").delete().eq("slug", context.params.slug);
-  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 400 });
-  return NextResponse.json({ deleted: true });
 }

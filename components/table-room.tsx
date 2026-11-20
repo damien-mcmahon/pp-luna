@@ -39,7 +39,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { fetchRemoteTable, persistRemoteTable } from "@/lib/api";
+import { fetchRemoteTable, hostedTablesEnabled, persistRemoteTable } from "@/lib/api";
 import { subscribeToTable, broadcastTableChange } from "@/lib/realtime";
 import {
   clearIdentity,
@@ -215,7 +215,7 @@ function MetricBar({ value, tone = "gold", compact = false }: { value: number; t
   return <span className={`power-bar ${compact ? "power-bar-compact" : ""}`}><i className={`power-fill power-${tone}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /><b>{value}%</b></span>;
 }
 
-function SeatCard({ member, voted, revealed, vote, color, isYou, index, total }: { member: Participant; voted: boolean; revealed: boolean; vote?: CardValue; color: string; isYou: boolean; index: number; total: number }) {
+function SeatCard({ member, voted, revealed, vote, color, isYou, index, total }: { member: Participant; voted: boolean; revealed: boolean; vote?: CardValue | null; color: string; isYou: boolean; index: number; total: number }) {
   const isDense = total > DENSE_SEAT_THRESHOLD;
   return <div className={`table-seat ${isDense ? "seat-dense" : `seat-position-${index % 8}`} ${isYou ? "seat-is-you" : ""}`} style={isDense ? denseSeatStyle(index, total) : undefined}>
     <div className={`seat-person ${member.isDealer ? "seat-dealer" : ""}`}>
@@ -275,6 +275,7 @@ export default function TableRoom({ slug }: { slug: string }) {
   const [manageOpen, setManageOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [remoteLoading, setRemoteLoading] = useState(true);
+  const [roomError, setRoomError] = useState("");
   const tableRef = useRef<TableRecord | null>(null);
   const identityRef = useRef<TableIdentity | null>(null);
   const taskEditingRef = useRef(false);
@@ -303,30 +304,56 @@ export default function TableRoom({ slug }: { slug: string }) {
     setTaskValue(value);
   }
 
-  function commitTable(updater: (current: TableRecord) => TableRecord, mutation?: TableMutation) {
+  function commitTable(updater: (current: TableRecord) => TableRecord, mutation: TableMutation) {
     const current = getTable(slug) ?? tableRef.current;
-    if (!current) return;
-    const next = saveTable(updater(current));
-    tableRef.current = next;
-    setTable(next);
-    persistQueueRef.current = persistQueueRef.current
-      .catch(() => undefined)
-      .then(() => persistRemoteTable(next, mutation));
-    broadcastTableChange(next.slug);
+    if (!current) return Promise.resolve(false);
+    if (!hostedTablesEnabled) {
+      const next = saveTable(updater(current));
+      tableRef.current = next;
+      setTable(next);
+      broadcastTableChange(next.slug);
+      return Promise.resolve(true);
+    }
+    // Hosted state is authoritative. Never reveal optimistically or merge stale
+    // client snapshots back into a server response.
+    let succeeded = false;
+    const operation = persistQueueRef.current.then(async () => {
+      const remote = await persistRemoteTable(current, mutation);
+      if (remote) applyRemoteTableRef.current(remote);
+      setRoomError("");
+      succeeded = true;
+      broadcastTableChange(slug);
+    }).catch((cause) => {
+      setRoomError(cause instanceof Error ? cause.message : "Unable to update table.");
+    });
+    persistQueueRef.current = operation;
+    return operation.then(() => succeeded);
   }
 
   applyRemoteTableRef.current = (remoteTable) => {
     const localTable = tableRef.current;
+    if (hostedTablesEnabled && localTable?.viewerId === remoteTable.viewerId &&
+        Date.parse(localTable?.updatedAt ?? "") > Date.parse(remoteTable.updatedAt)) return;
     const nextTable = saveTable(
-      localTable ? mergeConcurrentTable(localTable, remoteTable) : remoteTable,
+      localTable && !hostedTablesEnabled ? mergeConcurrentTable(localTable, remoteTable) : remoteTable,
       { announce: false, touch: false },
     );
-    if (localTable && tablesMatch(localTable, nextTable)) return;
     tableRef.current = nextTable;
-    setTable(nextTable);
+    if (!localTable || !tablesMatch(localTable, nextTable)) setTable(nextTable);
     if (!taskEditingRef.current) setTaskDraft(nextTable.currentRound.task);
 
-    const nextIdentity = identityRef.current;
+    let nextIdentity = identityRef.current;
+    if (hostedTablesEnabled && nextIdentity?.role !== "spectator") {
+      const member = nextTable.members.find((entry) => entry.id === nextTable.viewerId);
+      nextIdentity = member ? {
+        tableSlug: slug, participantId: member.id, name: member.name, team: member.team,
+        isCreator: member.isCreator, isDealer: member.isDealer, role: "participant",
+      } : null;
+      if (nextIdentity) writeIdentity(slug, nextIdentity);
+      else clearIdentity(slug);
+      identityRef.current = nextIdentity;
+      setIdentity(nextIdentity);
+    }
     const nextJoinOpen = !identityCanViewTable(nextTable, nextIdentity);
     setJoinOpen((current) => current === nextJoinOpen ? current : nextJoinOpen);
   };
@@ -335,7 +362,7 @@ export default function TableRoom({ slug }: { slug: string }) {
     let mounted = true;
     const localTable = getTable(slug);
     const localIdentity = readIdentity(slug);
-    if (localTable) {
+    if (localTable && !hostedTablesEnabled) {
       tableRef.current = localTable;
       setTable(localTable);
       setTaskDraft(localTable.currentRound.task);
@@ -362,15 +389,12 @@ export default function TableRoom({ slug }: { slug: string }) {
   }, [slug]);
 
   useEffect(() => subscribeToTable(slug, (remoteTable) => {
-    const local = getTable(slug);
-    if (local) applyRemoteTableRef.current(local);
-    if (remoteTable) {
-      applyRemoteTableRef.current(remoteTable);
+    if (!hostedTablesEnabled) {
+      const local = getTable(slug);
+      if (local) applyRemoteTableRef.current(local);
       return;
     }
-    void fetchRemoteTable(slug).then((nextRemoteTable) => {
-      if (nextRemoteTable) applyRemoteTableRef.current(nextRemoteTable);
-    });
+    if (remoteTable) applyRemoteTableRef.current(remoteTable);
   }), [slug]);
 
   useEffect(() => {
@@ -402,7 +426,7 @@ export default function TableRoom({ slug }: { slug: string }) {
             currentRound: { ...current.currentRound, revealed: true, revealStartedAt: undefined, revealedAt },
             history: current.history.filter((round) => round.id !== current.currentRound.id),
           };
-        });
+        }, { type: "finish-reveal", roundId: tableRef.current?.currentRound.id ?? "" });
       }
     }, 2700);
 
@@ -414,7 +438,7 @@ export default function TableRoom({ slug }: { slug: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [table?.currentRound.revealStartedAt, table?.currentRound.revealed, isCreator]);
 
-  function joinTable(event: FormEvent<HTMLFormElement>) {
+  async function joinTable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = joinForm.name.trim();
     if (!name || !table) {
@@ -442,12 +466,21 @@ export default function TableRoom({ slug }: { slug: string }) {
       lastSeenAt: joinedAt,
     };
     const nextIdentity: TableIdentity = { tableSlug: slug, participantId, name, team: participant.team, isCreator: participant.isCreator, isDealer: participant.isDealer, role: "participant" };
-    commitTable((current) => ({
+    const joined = await commitTable((current) => ({
       ...current,
       members: current.members.some((member) => member.id === participantId)
         ? current.members.map((member) => member.id === participantId ? { ...member, name, team: participant.team, lastSeenAt: joinedAt } : member)
         : [...current.members, participant],
     }), { type: "join", participant });
+    if (!joined) {
+      setJoinError("Unable to join. Refresh the table and try again.");
+      return;
+    }
+    if (hostedTablesEnabled) {
+      setJoinOpen(false);
+      setJoinError("");
+      return;
+    }
     writeIdentity(slug, nextIdentity);
     identityRef.current = nextIdentity;
     setIdentity(nextIdentity);
@@ -502,7 +535,7 @@ export default function TableRoom({ slug }: { slug: string }) {
     const nextTask = taskValueRef.current.trim();
     if (!current || !isCreator) return;
     if (nextTask !== current.currentRound.task) {
-      commitTable((latest) => ({ ...latest, currentRound: { ...latest.currentRound, task: nextTask } }));
+      commitTable((latest) => ({ ...latest, currentRound: { ...latest.currentRound, task: nextTask } }), { type: "task", roundId: current.currentRound.id, task: nextTask });
     }
     setTaskDraft(nextTask);
     taskEditingRef.current = false;
@@ -520,7 +553,7 @@ export default function TableRoom({ slug }: { slug: string }) {
     commitTable((current) => ({
       ...current,
       currentRound: { ...current.currentRound, revealStartedAt: new Date().toISOString() },
-    }));
+    }), { type: "start-reveal", roundId: table.currentRound.id });
   }
 
   function startNextRound(clearTask: boolean) {
@@ -529,11 +562,12 @@ export default function TableRoom({ slug }: { slug: string }) {
     const createdAt = new Date().toISOString();
     const nextTask = clearTask ? "" : current.currentRound.task;
     const previousSummary = summaryForRound(current.currentRound);
+    const nextRoundId = randomId("round");
     const nextHistory = [...current.history.filter((round) => round.id !== previousSummary.id), previousSummary];
     commitTable((current) => ({
       ...current,
       currentRound: {
-        id: randomId("round"),
+        id: nextRoundId,
         number: current.currentRound.number + 1,
         task: nextTask,
         votes: {},
@@ -541,7 +575,7 @@ export default function TableRoom({ slug }: { slug: string }) {
         createdAt,
       },
       history: nextHistory,
-    }));
+    }), { type: "next-round", roundId: current.currentRound.id, nextRoundId, clearTask });
     setTaskDraft(nextTask);
     taskEditingRef.current = false;
   }
@@ -552,17 +586,18 @@ export default function TableRoom({ slug }: { slug: string }) {
       ...current,
       members: current.members.filter((member) => member.id !== memberId),
       currentRound: { ...current.currentRound, votes: Object.fromEntries(Object.entries(current.currentRound.votes).filter(([id]) => id !== memberId)) },
-    }));
+    }), { type: "remove-member", participantId: memberId });
   }
 
-  function toggleOwnRole() {
+  async function toggleOwnRole() {
     if (!table || !isCreator || !currentMember) return;
     const nextDealer = !currentMember.isDealer;
-    commitTable((current) => ({
+    const changed = await commitTable((current) => ({
       ...current,
       members: current.members.map((member) => member.id === currentMember.id ? { ...member, isDealer: nextDealer } : member),
       currentRound: { ...current.currentRound, votes: Object.fromEntries(Object.entries(current.currentRound.votes).filter(([id]) => id !== currentMember.id)) },
-    }));
+    }), { type: "role", isDealer: nextDealer });
+    if (!changed || hostedTablesEnabled) return;
     const nextIdentity = identity ? { ...identity, isDealer: nextDealer } : null;
     if (nextIdentity) {
       writeIdentity(slug, nextIdentity);
@@ -573,7 +608,7 @@ export default function TableRoom({ slug }: { slug: string }) {
 
   function saveTableName() {
     if (!table || !isCreator || !renameValue.trim()) return;
-    commitTable((current) => ({ ...current, name: renameValue.trim() }));
+    commitTable((current) => ({ ...current, name: renameValue.trim() }), { type: "rename", name: renameValue.trim() });
   }
 
   async function copyTableLink() {
@@ -597,6 +632,7 @@ export default function TableRoom({ slug }: { slug: string }) {
 
   return <main className="room-page">
     <div className="noise" aria-hidden="true" />
+    {roomError && <div className="form-error page-width" role="alert">{roomError}</div>}
     <header className="room-nav page-width">
       <button className="brand-lockup" onClick={() => router.push("/")} aria-label="Back to home"><span className="brand-mark"><Spade size={18} fill="currentColor" /></span><span><strong>VEGAS</strong><small>PLANNING POKER</small></span></button>
       <div className="room-breadcrumb"><span>TABLES</span><ChevronRight size={14} /><b>{table.name}</b></div>

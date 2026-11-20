@@ -1,5 +1,5 @@
 -- Vegas uses a relational model. Run this in a new Supabase project,
--- then add the values in .env.local to enable hosted persistence and Realtime.
+-- then run migrations/20261120_secure_auth.sql and configure .env.local.
 
 create table if not exists public.tables (
   id text primary key,
@@ -44,27 +44,15 @@ create table if not exists public.votes (
 );
 
 create table if not exists public.admin_users (
-  username text primary key,
-  password text not null
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now()
 );
-
-insert into public.admin_users (username, password)
-values ('admin', 'admin')
-on conflict (username) do nothing;
 
 alter table public.tables enable row level security;
 alter table public.participants enable row level security;
 alter table public.rounds enable row level security;
 alter table public.votes enable row level security;
 
--- A table link is the access credential for the prototype. Mutations go through
--- the server route using the service role; public reads power Realtime clients.
-create policy "public can read tables" on public.tables for select using (true);
-create policy "public can read participants" on public.participants for select using (true);
-create policy "public can read rounds" on public.rounds for select using (true);
-create policy "public can read votes" on public.votes for select using (true);
-
-alter publication supabase_realtime add table public.tables;
-alter publication supabase_realtime add table public.participants;
-alter publication supabase_realtime add table public.rounds;
-alter publication supabase_realtime add table public.votes;
+alter table public.admin_users enable row level security;
+-- No browser table access or public Realtime feeds.
+-- Apply migrations/20261120_secure_auth.sql to install service-role-only actions.
