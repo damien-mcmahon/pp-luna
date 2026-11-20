@@ -189,7 +189,7 @@ input { outline: none; }
 .felt-task:focus-within { filter: drop-shadow(0 0 12px rgba(239,186,87,.12)); }
 
 /* The hit box stays still while the card artwork lifts above the fan. */
-.poker-card-hit { position: absolute; left: 50%; bottom: 6px; z-index: calc(var(--card-index) + 1); display: block; width: 78px; height: 153px; margin: 0; border: 0; padding: 0; background: transparent; transform: translateX(calc(-50% + var(--card-offset))); }
+.poker-card-hit { --card-offset: calc(var(--card-position) * 78px); position: absolute; left: 50%; bottom: 6px; z-index: calc(var(--card-index) + 1); display: block; width: 78px; height: 153px; margin: 0; border: 0; padding: 0; background: transparent; transform: translateX(calc(-50% + var(--card-offset))); }
 .poker-card-hit.poker-card-selected { z-index: 13; }.poker-card-hit:hover:not(:disabled), .poker-card-hit:focus-visible:not(:disabled) { z-index: 12; transform: translateX(calc(-50% + var(--card-offset))); }
 .poker-card-hit .poker-card { position: absolute; left: 50%; bottom: 0; z-index: 0; width: 108px; height: 153px; margin: 0; transform: translateX(-50%) rotate(calc((var(--card-index) - 3) * 9deg)) translateY(calc(abs(var(--card-index) - 3) * 9px)); pointer-events: none; }
 .poker-card-hit:hover:not(:disabled) .poker-card, .poker-card-hit:focus-visible:not(:disabled) .poker-card { transform: translateX(-50%) rotate(0deg) translateY(-46px) scale(1.04); }
@@ -204,15 +204,8 @@ input { outline: none; }
 }
 
 @media (max-width: 600px) {
-  .poker-card-hit { width: 52px; height: 108px; }
+  .poker-card-hit { --card-offset: calc(var(--card-position) * 52px); width: 52px; height: 108px; }
   .poker-card-hit .poker-card { width: 68px; height: 103px; }
-  .poker-card-hit:nth-child(1) { --card-offset: -156px; }
-  .poker-card-hit:nth-child(2) { --card-offset: -104px; }
-  .poker-card-hit:nth-child(3) { --card-offset: -52px; }
-  .poker-card-hit:nth-child(4) { --card-offset: 0px; }
-  .poker-card-hit:nth-child(5) { --card-offset: 52px; }
-  .poker-card-hit:nth-child(6) { --card-offset: 104px; }
-  .poker-card-hit:nth-child(7) { --card-offset: 156px; }
 }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -253,7 +246,7 @@ input { outline: none; }
 .spectator-option button:hover { color: #b8f0c8; }
 
 /* Keep the legacy fan transforms from moving the visual card's fixed slot. */
-.poker-card-hit .poker-card { transform: translateX(-50%) rotate(calc((var(--card-index) - 3) * 9deg)) translateY(calc(abs(var(--card-index) - 3) * 9px)) !important; }
+.poker-card-hit .poker-card { transform: translateX(-50%) rotate(calc(var(--card-position) * 9deg)) translateY(calc(abs(var(--card-position)) * 9px)) !important; }
 .poker-card-hit:hover:not(:disabled) .poker-card, .poker-card-hit:focus-visible:not(:disabled) .poker-card { transform: translateX(-50%) rotate(0deg) translateY(-46px) scale(1.04) !important; }
 .poker-card-hit.poker-card-selected .poker-card { transform: translateX(-50%) rotate(0deg) translateY(-34px) scale(1.06) !important; }
 .poker-card-hit.poker-card-selected:hover .poker-card, .poker-card-hit.poker-card-selected:focus-visible .poker-card { transform: translateX(-50%) rotate(0deg) translateY(-46px) scale(1.08) !important; }

@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { createRemoteTable } from "@/lib/api";
 import { createTableRecord, getTables } from "@/lib/store";
-import { TableMode, TableRecord } from "@/lib/types";
+import { DECKS, DeckType, TableMode, TableRecord } from "@/lib/types";
 
 const featureCards = [
   {
@@ -66,7 +66,7 @@ export default function LandingPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [joinLink, setJoinLink] = useState("");
   const [recentTables, setRecentTables] = useState<TableRecord[]>([]);
-  const [form, setForm] = useState({ tableName: "", creatorName: "", mode: "participant" as TableMode });
+  const [form, setForm] = useState({ tableName: "", creatorName: "", mode: "participant" as TableMode, deck: "fibonacci" as DeckType });
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -196,6 +196,16 @@ export default function LandingPage() {
           <form onSubmit={submitCreate}>
             <label>Table name<input autoFocus value={form.tableName} onChange={(event) => setForm({ ...form, tableName: event.target.value })} placeholder="e.g. Friday Poker Club" /></label>
             <label>Your name<input value={form.creatorName} onChange={(event) => setForm({ ...form, creatorName: event.target.value })} placeholder="e.g. Alex Morgan" /></label>
+            <div className="mode-label" id="deck-label">YOUR DECK</div>
+            <div className="mode-options" role="group" aria-labelledby="deck-label">
+              {Object.entries(DECKS).map(([key, deck]) => (
+                <button key={key} type="button" className={form.deck === key ? "mode-option selected" : "mode-option"} aria-pressed={form.deck === key} onClick={() => setForm({ ...form, deck: key as DeckType })}>
+                  <span className="mode-radio">{form.deck === key && <i />}</span>
+                  <span><b>{deck.name}</b><small>{deck.values.join(", ")}</small></span>
+                  <Spade size={17} />
+                </button>
+              ))}
+            </div>
             <div className="mode-label">YOUR SEAT</div>
             <div className="mode-options">
               <button type="button" className={form.mode === "participant" ? "mode-option selected" : "mode-option"} onClick={() => setForm({ ...form, mode: "participant" })}><span className="mode-radio">{form.mode === "participant" && <i />}</span><span><b>Play the hand</b><small>Vote with the table</small></span><Users size={17} /></button>

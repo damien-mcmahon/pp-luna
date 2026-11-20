@@ -6,6 +6,7 @@ create table if not exists public.tables (
   slug text unique not null,
   name text not null,
   creator_id text not null,
+  deck text not null default 'fibonacci' check (deck in ('fibonacci', 't-shirt-sizes')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -37,7 +38,7 @@ create table if not exists public.votes (
   table_id text not null references public.tables(id) on delete cascade,
   round_id text not null references public.rounds(id) on delete cascade,
   participant_id text not null references public.participants(id) on delete cascade,
-  value integer not null check (value in (1, 2, 3, 5, 8, 13, 21)),
+  value text not null check (value in ('1', '2', '3', '5', '8', '13', '21', 'XS', 'S', 'M', 'L', 'XL', 'XXL')),
   created_at timestamptz not null default now(),
   primary key (round_id, participant_id)
 );

@@ -1,5 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { Participant, Round, RoundSummary, TableMutation, TableRecord } from "@/lib/types";
+import { Participant, Round, RoundSummary, TableMutation, TableRecord, Votes } from "@/lib/types";
+import { alignmentForVotes, averageForVotes } from "@/lib/voting";
 
 function tablePayload(table: TableRecord) {
   return {
@@ -7,6 +8,7 @@ function tablePayload(table: TableRecord) {
     slug: table.slug,
     name: table.name,
     creator_id: table.creatorId,
+    deck: table.deck ?? "fibonacci",
     created_at: table.createdAt,
     updated_at: table.updatedAt,
   };
@@ -179,22 +181,6 @@ export async function saveParticipantToSupabase(
   return (await loadTableFromSupabase(client, table.slug)) ?? table;
 }
 
-function alignmentForVotes(votes: Record<string, number>) {
-  const values = Object.values(votes);
-  if (!values.length) return 0;
-  const counts = values.reduce<Record<string, number>>((result, value) => {
-    result[value] = (result[value] ?? 0) + 1;
-    return result;
-  }, {});
-  return Math.round((Math.max(...Object.values(counts)) / values.length) * 100);
-}
-
-function averageForVotes(votes: Record<string, number>) {
-  const values = Object.values(votes);
-  if (!values.length) return 0;
-  return values.reduce((total, value) => total + value, 0) / values.length;
-}
-
 export async function loadTableFromSupabase(client: SupabaseClient, slug: string) {
   const tableResult = await client.from("tables").select("*").eq("slug", slug).maybeSingle();
   if (tableResult.error || !tableResult.data) return null;
@@ -209,10 +195,10 @@ export async function loadTableFromSupabase(client: SupabaseClient, slug: string
   if (participantResult.error || roundResult.error || voteResult.error) return null;
 
   const rounds = roundResult.data ?? [];
-  const votesByRound = new Map<string, Record<string, number>>();
+  const votesByRound = new Map<string, Votes>();
   for (const vote of voteResult.data ?? []) {
     const votes = votesByRound.get(vote.round_id) ?? {};
-    votes[vote.participant_id] = vote.value;
+    votes[vote.participant_id] = /^\d+$/.test(String(vote.value)) ? Number(vote.value) as Votes[string] : vote.value;
     votesByRound.set(vote.round_id, votes);
   }
 
@@ -252,6 +238,7 @@ export async function loadTableFromSupabase(client: SupabaseClient, slug: string
     slug: table.slug,
     name: table.name,
     creatorId: table.creator_id,
+    deck: table.deck ?? "fibonacci",
     createdAt: table.created_at,
     updatedAt: table.updated_at,
     currentRound,
