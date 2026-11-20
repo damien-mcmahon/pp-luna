@@ -50,7 +50,7 @@ function slugify(value: string) {
     .replace(/^-|-$/g, "")
     .slice(0, 25);
 
-  return `${cleaned || "private-table"}-${Math.random().toString(36).slice(2, 7)}`;
+  return `${cleaned || "private-table"}-${globalThis.crypto.randomUUID().replaceAll("-", "")}`;
 }
 
 export function createTableRecord({
@@ -58,11 +58,13 @@ export function createTableRecord({
   creatorName,
   mode,
   deck = "fibonacci",
+  persist = true,
 }: {
   tableName: string;
   creatorName: string;
   mode: TableMode;
   deck?: DeckType;
+  persist?: boolean;
 }) {
   const createdAt = now();
   const creatorId = randomId("member");
@@ -96,16 +98,18 @@ export function createTableRecord({
     history: [],
   };
 
-  saveTable(table);
-  writeIdentity(table.slug, {
-    tableSlug: table.slug,
-    participantId: creatorId,
-    name: creator.name,
-    team: creator.team,
-    isCreator: true,
-    isDealer: creator.isDealer,
-    role: "participant",
-  });
+  if (persist) {
+    saveTable(table);
+    writeIdentity(table.slug, {
+      tableSlug: table.slug,
+      participantId: creatorId,
+      name: creator.name,
+      team: creator.team,
+      isCreator: true,
+      isDealer: creator.isDealer,
+      role: "participant",
+    });
+  }
 
   return table;
 }

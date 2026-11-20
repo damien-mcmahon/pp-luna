@@ -2,6 +2,9 @@
   "name": "vegas-planning-poker",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "node --test tests/*.test.cjs",
     "dev": "next dev",
@@ -10,13 +13,14 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@supabase/supabase-js": "2.45.4",
+    "@supabase/supabase-js": "2.119.2",
     "lucide-react": "^0.468.0",
     "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.17",
     "@types/node": "^20.17.10",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
