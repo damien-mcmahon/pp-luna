@@ -1,12 +1,12 @@
--- Vegas uses a relational model. Run this in a new Supabase project,
--- then run migrations/20261120_secure_auth.sql and configure .env.local.
+-- Baseline for the original Fibonacci-only relational schema.
+-- All setup now runs through `npm run db:migrate`; do not apply this separately.
+-- No prototype admin credentials or public read policies are seeded.
 
 create table if not exists public.tables (
   id text primary key,
   slug text unique not null,
   name text not null,
   creator_id text not null,
-  deck text not null default 'fibonacci' check (deck in ('fibonacci', 't-shirt-sizes')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -38,14 +38,9 @@ create table if not exists public.votes (
   table_id text not null references public.tables(id) on delete cascade,
   round_id text not null references public.rounds(id) on delete cascade,
   participant_id text not null references public.participants(id) on delete cascade,
-  value text not null check (value in ('1', '2', '3', '5', '8', '13', '21', 'XS', 'S', 'M', 'L', 'XL', 'XXL')),
+  value integer not null check (value in (1, 2, 3, 5, 8, 13, 21)),
   created_at timestamptz not null default now(),
   primary key (round_id, participant_id)
-);
-
-create table if not exists public.admin_users (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  created_at timestamptz not null default now()
 );
 
 alter table public.tables enable row level security;
@@ -53,6 +48,4 @@ alter table public.participants enable row level security;
 alter table public.rounds enable row level security;
 alter table public.votes enable row level security;
 
-alter table public.admin_users enable row level security;
--- No browser table access or public Realtime feeds.
--- Apply migrations/20261120_secure_auth.sql to install service-role-only actions.
+-- The subsequent security migration installs service-role-only actions and Auth membership.

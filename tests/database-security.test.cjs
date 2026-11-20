@@ -1,27 +1,54 @@
 const assert = require("node:assert/strict");
-const { readFileSync } = require("node:fs");
+const { readFileSync, readdirSync } = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
 const { PGlite } = require("@electric-sql/pglite");
 
+const migrationDirectory = path.join(__dirname, "..", "supabase", "migrations");
+const migrations = readdirSync(migrationDirectory).filter((name) => name.endsWith(".sql")).sort();
+const readMigration = (name) => readFileSync(path.join(migrationDirectory, name), "utf8");
+const bootstrap = `
+  create role anon;
+  create role authenticated;
+  create role service_role bypassrls;
+  create schema auth;
+  create table auth.users(id uuid primary key);
+`;
+
+test("migration history has unique timestamped versions", () => {
+  assert.ok(migrations.length >= 3);
+  for (const name of migrations) assert.match(name, /^\d{14}_[a-z0-9_]+\.sql$/);
+  assert.equal(new Set(migrations.map((name) => name.split("_")[0])).size, migrations.length);
+});
+
+test("a fresh database is fully provisioned by the ordered migration chain", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(bootstrap);
+    for (const name of migrations) await db.exec(readMigration(name));
+    assert.equal((await db.query("select count(*)::int as count from public.admin_users")).rows[0].count, 0);
+    assert.equal((await db.query("select data_type from information_schema.columns where table_schema='public' and table_name='votes' and column_name='value'")).rows[0].data_type, "text");
+    assert.equal((await db.query("select column_default from information_schema.columns where table_schema='public' and table_name='tables' and column_name='deck'")).rows[0].column_default, "'fibonacci'::text");
+    assert.ok((await db.query("select to_regprocedure('public.mutate_planning_table(text,text,text,jsonb)') as function")).rows[0].function);
+    await db.exec("set role anon");
+    await assert.rejects(db.query("select * from public.votes"), /permission denied/);
+  } finally {
+    await db.close();
+  }
+});
+
 test("security migration and transactional permissions", async (t) => {
   const db = new PGlite();
-  const read = (name) => readFileSync(path.join(__dirname, "..", name), "utf8");
   try {
-    await db.exec(`
-      create role anon;
-      create role authenticated;
-      create role service_role bypassrls;
-      create schema auth;
-      create table auth.users(id uuid primary key);
-    `);
-    await db.exec(read("supabase/schema.sql"));
+    await db.exec(bootstrap);
+    await db.exec(readMigration("20261120000000_initial_schema.sql"));
     // Exercise an actual upgrade from the old plaintext credential table.
-    await db.exec(`drop table public.admin_users; create table public.admin_users(username text primary key, password text not null);
+    await db.exec(`create table public.admin_users(username text primary key, password text not null);
       insert into public.admin_users values ('admin','admin');
       create policy "public can read votes" on public.votes for select using (true);
       insert into public.tables(id,slug,name,creator_id) values ('legacy','legacy-abc12','Legacy','old-creator');`);
-    await db.exec(read("supabase/migrations/20261120_secure_auth.sql"));
+    await db.exec(readMigration("20261120000100_t_shirt_sizes.sql"));
+    await db.exec(readMigration("20261120000200_secure_auth.sql"));
     assert.match((await db.query("select slug from public.tables where id='legacy'")).rows[0].slug, /^legacy-abc12-[a-f0-9]{32}$/);
     await db.exec("delete from public.tables where id='legacy'");
 

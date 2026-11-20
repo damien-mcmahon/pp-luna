@@ -1,4 +1,4 @@
--- Apply after the T-shirt Sizes migration, before deploying the matching app.
+-- Applied by Supabase CLI after T-shirt Sizes, before deploying the matching app.
 -- Existing unsigned seats cannot safely be claimed. Recreate active tables after upgrade.
 begin;
 

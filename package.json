@@ -6,6 +6,12 @@
     "node": ">=22"
   },
   "scripts": {
+    "db:login": "supabase login",
+    "db:link": "supabase link",
+    "db:history": "supabase migration list --remote",
+    "db:plan": "supabase db push --remote --skip-vault --dry-run",
+    "db:migrate": "supabase db push --remote --skip-vault",
+    "db:new": "supabase migration new",
     "test": "node --test tests/*.test.cjs",
     "dev": "next dev",
     "build": "next build",
@@ -26,6 +32,7 @@
     "@types/react-dom": "^18.3.1",
     "eslint": "^8.57.1",
     "eslint-config-next": "14.2.35",
+    "supabase": "3.2.0",
     "typescript": "^5.7.2"
   }
 }

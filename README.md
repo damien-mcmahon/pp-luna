@@ -18,7 +18,16 @@ The app works without environment variables as a **local demo only**. Tables and
 The production path uses Supabase Postgres and Supabase Auth:
 
 1. Create a Supabase project.
-2. Run [`supabase/schema.sql`](./supabase/schema.sql), then [`supabase/migrations/20261120_secure_auth.sql`](./supabase/migrations/20261120_secure_auth.sql) in the SQL editor.
+2. Install dependencies, log in and link the CLI once, then apply migrations:
+
+   ```bash
+   npm run db:login
+   npm run db:link -- --project-ref YOUR_PROJECT_REF
+   npm run db:plan
+   npm run db:migrate
+   ```
+
+   **Existing database?** Follow the [one-time adoption guide](./supabase/README.md#existing-database-one-time-adoption) first; SQL already applied manually must not be blindly rerun. Empty projects get the complete schema from the migration chain.
 3. Copy `.env.example` to `.env.local` and provide:
 
    ```env
@@ -32,13 +41,23 @@ The production path uses Supabase Postgres and Supabase Auth:
 
 Hosted browsers poll a non-cacheable, redacted table API every 1.5 seconds. Raw tables, participants, rounds, votes, admin membership, and audit records cannot be read through the anon/authenticated database roles. Public Postgres Realtime feeds are disabled to avoid leaking vote values. The service role key stays on the server. Hosted mutations fail closed; they never fall back to authorizing a local snapshot.
 
-### Upgrading an existing project
+### Database changes after setup
+
+```bash
+npm run db:new -- describe_your_change  # creates a unique timestamped SQL file
+npm test                             # validates the full migration chain locally
+npm run db:plan                       # inspect pending changes on the linked project
+npm run db:migrate                    # apply only pending migrations
+```
+
+Supabase tracks applied versions in the database. There is no separate bootstrap SQL file and no growing per-release SQL checklist. `npm run build` remains database-independent; run migrations as a deliberate deployment step, not inside a Vercel build or preview. See [the database guide](./supabase/README.md) for local Docker development, credentials, and future CI automation.
+
+### Upgrading to secured authentication
 
 1. Back up the database and schedule a short maintenance window. The old app is incompatible with the new access controls.
-2. Apply [`20261120_t_shirt_sizes.sql`](./supabase/migrations/20261120_t_shirt_sizes.sql) **only if not already applied**.
-3. Apply [`20261120_secure_auth.sql`](./supabase/migrations/20261120_secure_auth.sql), provision an administrator below, then deploy the matching code.
-4. Recreate active planning tables and share their new invite links. Existing unsigned seat cookies cannot safely prove ownership and are deliberately not upgraded. The migration also rotates short legacy invite URLs; old links stop working. Old tables/history remain in the database under their new slugs and can be removed by an administrator.
-5. Clear old browser demo data if it contains confidential votes. Previously public data cannot be made secret retroactively.
+2. Complete one-time CLI adoption if SQL was previously applied manually, then run `npm run db:plan` and `npm run db:migrate`.
+3. Provision an administrator below, deploy the matching code, and recreate active planning tables. Existing unsigned seat cookies cannot safely prove ownership and are deliberately not upgraded. The security migration also rotates short legacy invite URLs; old links stop working. Old tables/history remain under their new slugs and can be removed by an administrator.
+4. Clear old browser demo data if it contains confidential votes. Previously public data cannot be made secret retroactively.
 
 ## Administrator setup
 
@@ -93,4 +112,4 @@ npm test
 npm run build
 ```
 
-Tests include a local Postgres-compatible PGlite instance that applies the real security migration and checks browser-role isolation, forged seat credentials, creator-only actions, reveal countdown enforcement, admin audit records, and login throttling. Auth unit tests mock Supabase; test the complete email/password → MFA enrollment/verification → refresh → logout flow against a staging Supabase project before deploying. No production database changes are made by the test suite.
+Tests include local Postgres-compatible PGlite instances that apply the entire migration chain from an empty database and upgrade a legacy database. They check unique migration versions, browser-role isolation, forged seat credentials, creator-only actions, reveal countdown enforcement, admin audit records, and login throttling. Auth unit tests mock Supabase; test the complete email/password → MFA enrollment/verification → refresh → logout flow against a staging Supabase project before deploying. Tests and builds require no remote database credentials and make no production database changes.
