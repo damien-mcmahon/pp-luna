@@ -1,4 +1,5 @@
 import {
+  DeckType,
   Participant,
   Round,
   TableIdentity,
@@ -56,10 +57,12 @@ export function createTableRecord({
   tableName,
   creatorName,
   mode,
+  deck = "fibonacci",
 }: {
   tableName: string;
   creatorName: string;
   mode: TableMode;
+  deck?: DeckType;
 }) {
   const createdAt = now();
   const creatorId = randomId("member");
@@ -85,6 +88,7 @@ export function createTableRecord({
     slug: slugify(tableName),
     name: tableName.trim(),
     creatorId,
+    deck,
     createdAt,
     updatedAt: createdAt,
     currentRound: round,

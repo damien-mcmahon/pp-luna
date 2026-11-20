@@ -50,33 +50,20 @@ import {
   writeIdentity,
 } from "@/lib/store";
 import {
-  FIBONACCI_VALUES,
+  CardValue,
+  DECKS,
   Participant,
   RoundSummary,
   TableIdentity,
   TableMutation,
   TableRecord,
   TeamMetric,
+  Votes,
 } from "@/lib/types";
+import { alignmentForVotes, averageForVotes, mostCommonSizes } from "@/lib/voting";
 
 const MAX_TABLE_MEMBERS = 20;
 const DENSE_SEAT_THRESHOLD = 8;
-
-function alignmentForVotes(votes: Record<string, number>) {
-  const values = Object.values(votes);
-  if (!values.length) return 0;
-  const counts = values.reduce<Record<string, number>>((result, value) => {
-    result[value] = (result[value] ?? 0) + 1;
-    return result;
-  }, {});
-  return Math.round((Math.max(...Object.values(counts)) / values.length) * 100);
-}
-
-function averageForVotes(votes: Record<string, number>) {
-  const values = Object.values(votes);
-  if (!values.length) return 0;
-  return values.reduce((total, value) => total + value, 0) / values.length;
-}
 
 function summaryForRound(round: TableRecord["currentRound"]): RoundSummary {
   return {
@@ -92,7 +79,7 @@ function summaryForRound(round: TableRecord["currentRound"]): RoundSummary {
 }
 
 function teamMetricsForTable(table: TableRecord): TeamMetric[] {
-  const grouped = table.members.reduce<Record<string, { members: number; votes: Record<string, number> }>>(
+  const grouped = table.members.reduce<Record<string, { members: number; votes: Votes }>>(
     (result, member) => {
       if (member.isDealer) return result;
       const team = member.team || "No team";
@@ -128,6 +115,12 @@ function coherenceForTable(table: TableRecord) {
 
 function displayAverage(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function displayEstimate(votes: Votes, average = averageForVotes(votes)) {
+  return Object.values(votes).some((value) => typeof value === "string")
+    ? mostCommonSizes(votes)
+    : displayAverage(average);
 }
 
 function tablesMatch(left: TableRecord, right: TableRecord) {
@@ -222,7 +215,7 @@ function MetricBar({ value, tone = "gold", compact = false }: { value: number; t
   return <span className={`power-bar ${compact ? "power-bar-compact" : ""}`}><i className={`power-fill power-${tone}`} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /><b>{value}%</b></span>;
 }
 
-function SeatCard({ member, voted, revealed, vote, color, isYou, index, total }: { member: Participant; voted: boolean; revealed: boolean; vote?: number; color: string; isYou: boolean; index: number; total: number }) {
+function SeatCard({ member, voted, revealed, vote, color, isYou, index, total }: { member: Participant; voted: boolean; revealed: boolean; vote?: CardValue; color: string; isYou: boolean; index: number; total: number }) {
   const isDense = total > DENSE_SEAT_THRESHOLD;
   return <div className={`table-seat ${isDense ? "seat-dense" : `seat-position-${index % 8}`} ${isYou ? "seat-is-you" : ""}`} style={isDense ? denseSeatStyle(index, total) : undefined}>
     <div className={`seat-person ${member.isDealer ? "seat-dealer" : ""}`}>
@@ -236,14 +229,15 @@ function SeatCard({ member, voted, revealed, vote, color, isYou, index, total }:
   </div>;
 }
 
-function PokerCard({ value, index, selected, disabled, onSelect }: { value: number; index: number; selected: boolean; disabled: boolean; onSelect: () => void }) {
+function PokerCard({ value, index, total, selected, disabled, onSelect }: { value: CardValue; index: number; total: number; selected: boolean; disabled: boolean; onSelect: () => void }) {
   return <button
     type="button"
     className={`poker-card-hit ${selected ? "poker-card-selected" : ""}`}
-    style={{ "--card-index": index, "--card-total": FIBONACCI_VALUES.length, "--card-offset": `${(index - 3) * 78}px` } as React.CSSProperties}
+    style={{ "--card-index": index, "--card-total": total, "--card-position": index - (total - 1) / 2 } as React.CSSProperties}
     onClick={onSelect}
     disabled={disabled}
-    aria-label={`Vote ${value} points`}
+    aria-label={`Vote ${value}${typeof value === "number" ? " points" : ""}`}
+    aria-pressed={selected}
   >
     <span className={`poker-card ${selected ? "poker-card-selected" : ""}`} aria-hidden="true">
       <span className="card-corner card-corner-top"><b>{value}</b><i>{index % 2 === 0 ? "♠" : "♥"}</i></span>
@@ -262,8 +256,8 @@ function RoundLedger({ history, current }: { history: RoundSummary[]; current: T
   return <div className="round-ledger">
     <div className="panel-label"><span>RECENT HANDS</span><small>{totalRounds} TOTAL</small></div>
     {rounds.length === 0 && !current.revealed ? <div className="ledger-empty"><Clock3 size={15} /><span>Your completed rounds will land here.</span></div> : <>
-      {currentSummary && <div className="ledger-row ledger-current"><span className="ledger-round">{String(currentSummary.number).padStart(2, "0")}</span><span className="ledger-task">{currentSummary.task || "Untitled hand"}</span><b>{displayAverage(currentSummary.average)}</b><MetricBar value={currentSummary.alignment} compact /></div>}
-      {rounds.map((round) => <div className="ledger-row" key={round.id}><span className="ledger-round">{String(round.number).padStart(2, "0")}</span><span className="ledger-task">{round.task || "Untitled hand"}</span><b>{displayAverage(round.average)}</b><MetricBar value={round.alignment} compact /></div>)}
+      {currentSummary && <div className="ledger-row ledger-current"><span className="ledger-round">{String(currentSummary.number).padStart(2, "0")}</span><span className="ledger-task">{currentSummary.task || "Untitled hand"}</span><b>{displayEstimate(currentSummary.votes, currentSummary.average)}</b><MetricBar value={currentSummary.alignment} compact /></div>}
+      {rounds.map((round) => <div className="ledger-row" key={round.id}><span className="ledger-round">{String(round.number).padStart(2, "0")}</span><span className="ledger-task">{round.task || "Untitled hand"}</span><b>{displayEstimate(round.votes, round.average)}</b><MetricBar value={round.alignment} compact /></div>)}
     </>}
   </div>;
 }
@@ -293,12 +287,14 @@ export default function TableRoom({ slug }: { slug: string }) {
   const isCreator = Boolean(currentMember?.isCreator && table?.creatorId === currentMember.id);
   const isDealer = Boolean(currentMember?.isDealer);
   const tableName = table?.name;
+  const deck = DECKS[table?.deck ?? "fibonacci"];
+  const estimateLabel = table?.deck === "t-shirt-sizes" ? "Most common size" : "Average score";
 
   const activeParticipants = useMemo(() => table?.members.filter((member) => !member.isDealer) ?? [], [table]);
   const votedCount = table ? activeParticipants.filter((member) => table.currentRound.votes[member.id] !== undefined).length : 0;
   const allVoted = activeParticipants.length > 0 && votedCount === activeParticipants.length;
   const alignment = table && table.currentRound.revealed ? alignmentForVotes(table.currentRound.votes) : 0;
-  const average = table && table.currentRound.revealed ? averageForVotes(table.currentRound.votes) : 0;
+  const estimate = table?.currentRound.revealed ? displayEstimate(table.currentRound.votes) : "—";
   const coherence = table ? coherenceForTable(table) : 0;
   const teamMetrics = table ? teamMetricsForTable(table) : [];
 
@@ -484,7 +480,7 @@ export default function TableRoom({ slug }: { slug: string }) {
     setJoinOpen(true);
   }
 
-  function selectVote(value: typeof FIBONACCI_VALUES[number]) {
+  function selectVote(value: CardValue) {
     if (!table || !currentMember || currentMember.isDealer || table.currentRound.revealed || countdown !== null) return;
     const roundId = table.currentRound.id;
     const participantId = currentMember.id;
@@ -633,7 +629,7 @@ export default function TableRoom({ slug }: { slug: string }) {
             </> : <>
               <div className="revealed-kicker"><span className="table-pip gold-pip" /> HAND REVEALED <span className="table-pip gold-pip" /></div>
               <div className={`revealed-cards ${activeParticipants.length > 7 ? "revealed-cards-many" : ""}`}>{activeParticipants.map((member, index) => <div className="revealed-card" key={member.id} style={{ "--reveal-index": index } as React.CSSProperties}><span>{table.currentRound.votes[member.id] ?? "—"}</span><small>{member.name.split(" ")[0]}</small></div>)}</div>
-              <div className="center-results"><div><small>TABLE ALIGNMENT</small><strong>{alignment}%</strong><MetricBar value={alignment} /></div><div><small>AVERAGE SCORE</small><strong>{displayAverage(average)}</strong><span className="result-spark">{table.currentRound.votes && Object.keys(table.currentRound.votes).length} votes in</span></div></div>
+              <div className="center-results"><div><small>TABLE ALIGNMENT</small><strong>{alignment}%</strong><MetricBar value={alignment} /></div><div><small>{estimateLabel.toUpperCase()}</small><strong>{estimate}</strong><span className="result-spark">{table.currentRound.votes && Object.keys(table.currentRound.votes).length} votes in</span></div></div>
               {isCreator && <div className="revealed-actions"><button className="button button-primary" onClick={() => startNextRound(false)}><RefreshCw size={15} /> Replay hand</button><button className="button button-ghost-light" onClick={() => startNextRound(true)}><Trash2 size={15} /> Clear table</button></div>}
               {!isCreator && <div className="waiting-dealer revealed-note">{isSpectator ? <><Eye size={15} /><span>You are watching the table</span></> : <><Check size={15} /><span>The dealer is choosing what&apos;s next</span></>}</div>}
             </>}
@@ -641,14 +637,14 @@ export default function TableRoom({ slug }: { slug: string }) {
           {countdown !== null && <div className="reveal-overlay"><div className="countdown-ring"><span>{countdown}</span></div><b>THE DEALER IS REVEALING</b><small>Hold your nerve.</small></div>}
         </section>
 
-        {!isSpectator && !isDealer && !table.currentRound.revealed && <section className="hand-section"><div className="hand-heading"><div><div className="eyebrow">YOUR HAND <span className="hand-live-dot" /></div><h2>Pick your estimate.</h2></div><span><ShieldCheck size={14} /> Your vote stays private until the reveal.</span></div><div className="card-fan">{FIBONACCI_VALUES.map((value, index) => <PokerCard key={value} value={value} index={index} selected={currentMember ? table.currentRound.votes[currentMember.id] === value : false} disabled={!currentMember || table.currentRound.revealed || countdown !== null} onSelect={() => selectVote(value)} />)}</div></section>}
+        {!isSpectator && !isDealer && !table.currentRound.revealed && <section className="hand-section"><div className="hand-heading"><div><div className="eyebrow">YOUR HAND <span className="hand-live-dot" /></div><h2>Pick your estimate.</h2></div><span><ShieldCheck size={14} /> Your vote stays private until the reveal.</span></div><div className="card-fan">{deck.values.map((value, index) => <PokerCard key={value} value={value} index={index} total={deck.values.length} selected={currentMember ? table.currentRound.votes[currentMember.id] === value : false} disabled={!currentMember || table.currentRound.revealed || countdown !== null} onSelect={() => selectVote(value)} />)}</div></section>}
         {!isSpectator && isDealer && !table.currentRound.revealed && <section className="dealer-hand"><div className="dealer-hand-icon"><Crown size={21} /></div><div><div className="eyebrow">DEALER MODE</div><h2>You run the reveal.</h2><p>Participants are choosing their cards. When the table is ready, reveal the hand above.</p></div><span className="dealer-hand-status"><i /> {votedCount}/{activeParticipants.length} ready</span></section>}
       </section>
 
       <aside className="room-sidebar">
         <section className="sidebar-panel roster-panel"><div className="panel-heading"><div><div className="eyebrow">AT THE TABLE</div><h2>{table.members.length} {table.members.length === 1 ? "player" : "players"}</h2></div><span className="online-count"><i /> LIVE</span></div><div className="roster-list">{table.members.map((member, index) => <div className={`roster-row ${member.id === identity?.participantId ? "roster-you" : ""}`} key={member.id}><span className={`roster-avatar avatar-${memberColor(index)}`}>{initials(member.name)}</span><span className="roster-copy"><b>{member.name}{member.id === identity?.participantId && <em>YOU</em>}</b><small>{member.isDealer ? "Dealer" : member.team || "No team"}</small></span>{member.isDealer ? <Crown size={14} className="roster-crown" fill="currentColor" /> : <span className={`roster-vote-dot ${table.currentRound.votes[member.id] !== undefined ? "ready" : ""}`} title={table.currentRound.votes[member.id] !== undefined ? "Card dealt" : "Thinking"} />}{isCreator && !member.isCreator && <button className="remove-player" onClick={() => removeMember(member.id)} aria-label={`Remove ${member.name}`}><X size={13} /></button>}</div>)}</div><button className="invite-button" onClick={copyTableLink}><UserPlus size={15} /> Invite a player <Copy size={13} /></button></section>
 
-        <section className="sidebar-panel metrics-panel"><div className="panel-heading"><div><div className="eyebrow">THE READ</div><h2>Power bars</h2></div><Info size={15} /></div><div className="metric-item"><div><span>Table alignment</span><b>{table.currentRound.revealed ? `${alignment}%` : "—"}</b></div><MetricBar value={alignment} tone="gold" /></div><div className="metric-item"><div><span>Session coherence</span><b>{coherence ? `${coherence}%` : "—"}</b></div><MetricBar value={coherence} tone="mint" /></div><div className="metric-average"><span>Average score</span><strong>{table.currentRound.revealed ? displayAverage(average) : "—"}</strong><small>{table.currentRound.revealed ? "across the table" : "revealed after the hand"}</small></div>{table.currentRound.revealed && <div className="team-metrics"><div className="subpanel-label">BY TEAM</div>{teamMetrics.map((metric) => <div className="team-metric" key={metric.team}><span><i /> {metric.team}<small>{metric.votes}/{metric.members} voted</small></span><MetricBar value={metric.alignment} tone="coral" compact /></div>)}</div>}</section>
+        <section className="sidebar-panel metrics-panel"><div className="panel-heading"><div><div className="eyebrow">THE READ</div><h2>Power bars</h2></div><Info size={15} /></div><div className="metric-item"><div><span>Table alignment</span><b>{table.currentRound.revealed ? `${alignment}%` : "—"}</b></div><MetricBar value={alignment} tone="gold" /></div><div className="metric-item"><div><span>Session coherence</span><b>{coherence ? `${coherence}%` : "—"}</b></div><MetricBar value={coherence} tone="mint" /></div><div className="metric-average"><span>{estimateLabel}</span><strong>{estimate}</strong><small>{table.currentRound.revealed ? "across the table" : "revealed after the hand"}</small></div>{table.currentRound.revealed && <div className="team-metrics"><div className="subpanel-label">BY TEAM</div>{teamMetrics.map((metric) => <div className="team-metric" key={metric.team}><span><i /> {metric.team}<small>{metric.votes}/{metric.members} voted</small></span><MetricBar value={metric.alignment} tone="coral" compact /></div>)}</div>}</section>
 
         <section className="sidebar-panel ledger-panel"><RoundLedger history={table.history} current={table.currentRound} /></section>
 
@@ -658,6 +654,6 @@ export default function TableRoom({ slug }: { slug: string }) {
 
     {joinOpen && <div className="modal-backdrop join-backdrop"><section className="join-modal" role="dialog" aria-modal="true" aria-labelledby="join-title"><div className="join-card-suit"><Spade size={22} fill="currentColor" /></div><div className="eyebrow">YOU&apos;RE INVITED</div><h2 id="join-title">Take a seat at<br /><em>{table.name}</em></h2><p>Tell the table who just walked in. Your name is saved on this device for this room.</p><form onSubmit={joinTable}><label>Your name<input autoFocus value={joinForm.name} onChange={(event) => setJoinForm({ ...joinForm, name: event.target.value })} placeholder="e.g. Sam Lee" /></label><label>Team <small>OPTIONAL</small><input value={joinForm.team} onChange={(event) => setJoinForm({ ...joinForm, team: event.target.value })} placeholder="e.g. Design" /></label>{joinError && <div className="form-error">{joinError}</div>}<button className="button button-primary modal-submit" type="submit">Join the table <ArrowRight size={16} /></button></form><div className="spectator-option"><span>Just here to follow along?</span><button type="button" onClick={watchAsSpectator}><Eye size={15} /> Watch as spectator <ArrowRight size={15} /></button></div><div className="join-privacy"><ShieldCheck size={13} /> You can change your details from your seat.</div></section></div>}
 
-    {manageOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setManageOpen(false); }}><section className="manage-modal" role="dialog" aria-modal="true" aria-labelledby="manage-title"><div className="manage-header"><div><div className="eyebrow">{isCreator ? "HOUSE CONTROL" : "TABLE INFO"}</div><h2 id="manage-title">{isCreator ? "Manage the table." : "Table details."}</h2></div><button className="modal-close" onClick={() => setManageOpen(false)} aria-label="Close"><X size={18} /></button></div>{isCreator ? <><label>Table name<div className="inline-input"><input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} /><button onClick={() => { saveTableName(); setManageOpen(false); }}><Check size={15} /></button></div></label><div className="manage-option"><span className="manage-option-icon"><Crown size={16} /></span><span><b>Your role</b><small>{isDealer ? "Dealer only · You call the reveal" : "Participant · You vote with the room"}</small></span><button className="role-toggle" onClick={toggleOwnRole}>{isDealer ? "Play hand" : "Deal only"}</button></div><div className="manage-option"><span className="manage-option-icon"><Spade size={16} /></span><span><b>Fibonacci deck</b><small>7 cards · 1, 2, 3, 5, 8, 13, 21</small></span></div><div className="manage-invite"><div><div className="eyebrow">PRIVATE INVITE LINK</div><p>Anyone with this link can take an open seat.</p></div><button className="button button-ghost" onClick={copyTableLink}>{copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Copied" : "Copy link"}</button></div><div className="manage-members"><div className="subpanel-label">REMOVE PLAYERS</div>{table.members.filter((member) => !member.isCreator).map((member) => <div className="manage-member" key={member.id}><span className={`roster-avatar avatar-${memberColor(table.members.indexOf(member))}`}>{initials(member.name)}</span><span><b>{member.name}</b><small>{member.team || "No team"}</small></span><button onClick={() => removeMember(member.id)}><Trash2 size={14} /></button></div>)}{table.members.filter((member) => !member.isCreator).length === 0 && <p className="no-members">No invited players yet. Share the link to deal them in.</p>}</div></> : <><div className="table-info-grid"><div><small>TABLE</small><b>{table.name}</b></div><div><small>ROUND</small><b>{String(table.currentRound.number).padStart(2, "0")}</b></div><div><small>CREATED BY</small><b>{table.members.find((member) => member.isCreator)?.name ?? "Dealer"}</b></div><div><small>DECK</small><b>Fibonacci</b></div></div><div className="manage-invite"><div><div className="eyebrow">WANT TO BRING SOMEONE IN?</div><p>Ask the dealer for the invite link.</p></div><button className="button button-ghost" onClick={copyTableLink}><Copy size={15} /> Copy link</button></div></>}<button className="manage-close" onClick={() => setManageOpen(false)}>Close panel</button></section></div>}
+    {manageOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setManageOpen(false); }}><section className="manage-modal" role="dialog" aria-modal="true" aria-labelledby="manage-title"><div className="manage-header"><div><div className="eyebrow">{isCreator ? "HOUSE CONTROL" : "TABLE INFO"}</div><h2 id="manage-title">{isCreator ? "Manage the table." : "Table details."}</h2></div><button className="modal-close" onClick={() => setManageOpen(false)} aria-label="Close"><X size={18} /></button></div>{isCreator ? <><label>Table name<div className="inline-input"><input value={renameValue} onChange={(event) => setRenameValue(event.target.value)} /><button onClick={() => { saveTableName(); setManageOpen(false); }}><Check size={15} /></button></div></label><div className="manage-option"><span className="manage-option-icon"><Crown size={16} /></span><span><b>Your role</b><small>{isDealer ? "Dealer only · You call the reveal" : "Participant · You vote with the room"}</small></span><button className="role-toggle" onClick={toggleOwnRole}>{isDealer ? "Play hand" : "Deal only"}</button></div><div className="manage-option"><span className="manage-option-icon"><Spade size={16} /></span><span><b>{deck.name} deck</b><small>{deck.values.length} cards · {deck.values.join(", ")}</small></span></div><div className="manage-invite"><div><div className="eyebrow">PRIVATE INVITE LINK</div><p>Anyone with this link can take an open seat.</p></div><button className="button button-ghost" onClick={copyTableLink}>{copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Copied" : "Copy link"}</button></div><div className="manage-members"><div className="subpanel-label">REMOVE PLAYERS</div>{table.members.filter((member) => !member.isCreator).map((member) => <div className="manage-member" key={member.id}><span className={`roster-avatar avatar-${memberColor(table.members.indexOf(member))}`}>{initials(member.name)}</span><span><b>{member.name}</b><small>{member.team || "No team"}</small></span><button onClick={() => removeMember(member.id)}><Trash2 size={14} /></button></div>)}{table.members.filter((member) => !member.isCreator).length === 0 && <p className="no-members">No invited players yet. Share the link to deal them in.</p>}</div></> : <><div className="table-info-grid"><div><small>TABLE</small><b>{table.name}</b></div><div><small>ROUND</small><b>{String(table.currentRound.number).padStart(2, "0")}</b></div><div><small>CREATED BY</small><b>{table.members.find((member) => member.isCreator)?.name ?? "Dealer"}</b></div><div><small>DECK</small><b>{deck.name}</b></div></div><div className="manage-invite"><div><div className="eyebrow">WANT TO BRING SOMEONE IN?</div><p>Ask the dealer for the invite link.</p></div><button className="button button-ghost" onClick={copyTableLink}><Copy size={15} /> Copy link</button></div></>}<button className="manage-close" onClick={() => setManageOpen(false)}>Close panel</button></section></div>}
   </main>;
 }

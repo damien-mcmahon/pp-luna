@@ -29,6 +29,8 @@ The production path uses Supabase Postgres and Supabase Realtime:
 
 The browser subscribes to table, participant, round, and vote changes over Supabase Realtime. API route handlers use the service role only on the server to persist the normalized relational records. The local event/polling layer remains as a safe fallback if hosted configuration is unavailable.
 
+For an existing Supabase project, run [`supabase/migrations/20261120_t_shirt_sizes.sql`](./supabase/migrations/20261120_t_shirt_sizes.sql) before deploying this version. New projects already include these changes in `schema.sql`.
+
 ## Product behavior
 
 - Create a named table and choose `Play the hand` or `Deal only`.
@@ -37,6 +39,7 @@ The browser subscribes to table, participant, round, and vote changes over Supab
 - New seats provide a name and optional team. The seat or spectator role is remembered in a cookie for that table on that device.
 - Tables support up to 20 seats. Larger rooms use a compact perimeter layout, and revealed hands show every participant in a responsive card grid.
 - Fibonacci cards are `1, 2, 3, 5, 8, 13, 21`.
+- Choose Fibonacci (the default) or T-shirt Sizes when creating a table. T-shirt Sizes cards are `XS, S, M, L, XL, XXL`; reveals show the most common size (all tied sizes when applicable) instead of a numeric average.
 - The creator can deal, remove players, rename the room, copy the invite, and switch between participant and dealer mode.
 - Revealing counts down from 3, turns every card face up, and calculates table/team alignment, average score, and session coherence.
 - `Replay hand` keeps the task and deals a new vote. `Clear table` deals a new vote and clears the task.

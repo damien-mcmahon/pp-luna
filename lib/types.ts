@@ -1,6 +1,14 @@
 export const FIBONACCI_VALUES = [1, 2, 3, 5, 8, 13, 21] as const;
 
 export type FibonacciValue = (typeof FIBONACCI_VALUES)[number];
+export const TSHIRT_VALUES = ["XS", "S", "M", "L", "XL", "XXL"] as const;
+export type CardValue = FibonacciValue | (typeof TSHIRT_VALUES)[number];
+export type DeckType = "fibonacci" | "t-shirt-sizes";
+export type Votes = Record<string, CardValue>;
+export const DECKS = {
+  fibonacci: { name: "Fibonacci", values: FIBONACCI_VALUES },
+  "t-shirt-sizes": { name: "T-shirt Sizes", values: TSHIRT_VALUES },
+} as const;
 export type TableMode = "participant" | "dealer";
 
 export interface Participant {
@@ -17,7 +25,7 @@ export interface Round {
   id: string;
   number: number;
   task: string;
-  votes: Record<string, number>;
+  votes: Votes;
   revealed: boolean;
   createdAt: string;
   revealStartedAt?: string;
@@ -28,7 +36,7 @@ export interface RoundSummary {
   id: string;
   number: number;
   task: string;
-  votes: Record<string, number>;
+  votes: Votes;
   alignment: number;
   average: number;
   createdAt: string;
@@ -40,6 +48,7 @@ export interface TableRecord {
   slug: string;
   name: string;
   creatorId: string;
+  deck?: DeckType;
   createdAt: string;
   updatedAt: string;
   currentRound: Round;
@@ -66,7 +75,7 @@ export type TableMutation =
       type: "vote";
       roundId: string;
       participantId: string;
-      value: FibonacciValue | null;
+      value: CardValue | null;
     };
 
 export interface TeamMetric {
