@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { readFileSync } = require("node:fs");
+const { existsSync, readFileSync, readdirSync } = require("node:fs");
 const path = require("node:path");
 const { test } = require("node:test");
 const { PGlite } = require("@electric-sql/pglite");
@@ -14,14 +14,26 @@ test("security migration and transactional permissions", async (t) => {
       create role service_role bypassrls;
       create schema auth;
       create table auth.users(id uuid primary key);
+      create publication supabase_realtime;
     `);
-    await db.exec(read("supabase/schema.sql"));
+    // The auth PR runs against today's manual bootstrap as well as the separate
+    // CLI workflow's migration chain, so both PRs can be validated independently.
+    if (existsSync(path.join(__dirname, "..", "supabase/schema.sql"))) {
+      await db.exec(read("supabase/schema.sql"));
+    } else {
+      const directory = path.join(__dirname, "..", "supabase/migrations");
+      for (const file of readdirSync(directory).filter((file) =>
+        file.endsWith(".sql") && file < "20261120000200_secure_auth.sql").sort()) {
+        await db.exec(read(`supabase/migrations/${file}`));
+      }
+    }
     // Exercise an actual upgrade from the old plaintext credential table.
     await db.exec(`drop table public.admin_users; create table public.admin_users(username text primary key, password text not null);
       insert into public.admin_users values ('admin','admin');
+      drop policy if exists "public can read votes" on public.votes;
       create policy "public can read votes" on public.votes for select using (true);
       insert into public.tables(id,slug,name,creator_id) values ('legacy','legacy-abc12','Legacy','old-creator');`);
-    await db.exec(read("supabase/migrations/20261120_secure_auth.sql"));
+    await db.exec(read("supabase/migrations/20261120000200_secure_auth.sql"));
     assert.match((await db.query("select slug from public.tables where id='legacy'")).rows[0].slug, /^legacy-abc12-[a-f0-9]{32}$/);
     await db.exec("delete from public.tables where id='legacy'");
 

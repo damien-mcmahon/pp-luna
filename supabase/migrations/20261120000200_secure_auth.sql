@@ -1,4 +1,5 @@
--- Apply after the T-shirt Sizes migration, before deploying the matching app.
+-- Auth-only migration: apply after the existing schema and T-shirt Sizes.
+-- CLI workflow setup is delivered by the separate database-workflow PR.
 -- Existing unsigned seats cannot safely be claimed. Recreate active tables after upgrade.
 begin;
 
