@@ -1,4 +1,4 @@
--- Run once on existing projects before deploying T-shirt Sizes support.
+-- Applied once by Supabase CLI after the initial schema baseline.
 begin;
 
 alter table public.tables

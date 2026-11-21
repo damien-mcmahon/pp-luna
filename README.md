@@ -4,6 +4,8 @@ Vegas-inspired realtime planning poker for teams.
 
 ## Run locally
 
+Use Node.js 22 or later.
+
 ```bash
 npm install
 npm run dev
@@ -16,7 +18,14 @@ The app works without environment variables. In that mode tables are persisted i
 The production path uses Supabase Postgres and Supabase Realtime:
 
 1. Create a Supabase project.
-2. Run [`supabase/schema.sql`](./supabase/schema.sql) in the SQL editor.
+2. For an **empty** project, install dependencies and run:
+
+   ```bash
+   npm run db:login
+   npm run db:link -- --project-ref YOUR_PROJECT_REF
+   npm run db:plan
+   npm run db:migrate
+   ```
 3. Copy `.env.example` to `.env.local` and provide:
 
    ```env
@@ -29,7 +38,19 @@ The production path uses Supabase Postgres and Supabase Realtime:
 
 The browser subscribes to table, participant, round, and vote changes over Supabase Realtime. API route handlers use the service role only on the server to persist the normalized relational records. The local event/polling layer remains as a safe fallback if hosted configuration is unavailable.
 
-For an existing Supabase project, run [`supabase/migrations/20261120_t_shirt_sizes.sql`](./supabase/migrations/20261120_t_shirt_sizes.sql) before deploying this version. New projects already include these changes in `schema.sql`.
+**Existing database:** follow the [one-time CLI adoption guide](./supabase/README.md#existing-database-one-time-adoption) before pushing. SQL already applied manually must not be blindly rerun.
+
+### Database workflow
+
+```bash
+npm run db:new -- describe_your_change
+# Edit the generated timestamped SQL migration.
+npm test
+npm run db:plan
+npm run db:migrate
+```
+
+Supabase tracks applied versions and skips them on later pushes. The migration chain replaces the separate bootstrap SQL file. `npm run build` stays database-independent: migrations are a deliberate deployment step, never part of a Vercel build or preview. See [the database guide](./supabase/README.md) for local development, credentials, and future CI automation.
 
 ## Product behavior
 
@@ -48,5 +69,6 @@ For an existing Supabase project, run [`supabase/migrations/20261120_t_shirt_siz
 ## Checks
 
 ```bash
+npm test
 npm run build
 ```

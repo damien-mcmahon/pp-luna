@@ -1,12 +1,12 @@
--- Vegas uses a relational model. Run this in a new Supabase project,
--- then add the values in .env.local to enable hosted persistence and Realtime.
+-- Historical Fibonacci-only baseline. Apply through Supabase CLI, not separately.
+-- Deliberately preserve the existing app's prototype admin and Realtime behavior.
+-- Authentication hardening belongs in a separate subsequent migration.
 
 create table if not exists public.tables (
   id text primary key,
   slug text unique not null,
   name text not null,
   creator_id text not null,
-  deck text not null default 'fibonacci' check (deck in ('fibonacci', 't-shirt-sizes')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -38,7 +38,7 @@ create table if not exists public.votes (
   table_id text not null references public.tables(id) on delete cascade,
   round_id text not null references public.rounds(id) on delete cascade,
   participant_id text not null references public.participants(id) on delete cascade,
-  value text not null check (value in ('1', '2', '3', '5', '8', '13', '21', 'XS', 'S', 'M', 'L', 'XL', 'XXL')),
+  value integer not null check (value in (1, 2, 3, 5, 8, 13, 21)),
   created_at timestamptz not null default now(),
   primary key (round_id, participant_id)
 );
