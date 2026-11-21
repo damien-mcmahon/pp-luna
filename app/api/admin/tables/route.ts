@@ -1,16 +1,18 @@
-import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase-server";
+import { withAdmin } from "@/lib/admin-auth";
+import { privateJson } from "@/lib/http-security";
 
-function authenticated(request: Request) {
-  return request.headers.get("cookie")?.includes("dealers-choice-admin=admin") ?? false;
-}
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  if (!authenticated(request)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
-  const client = getSupabaseAdmin();
-  if (!client) return NextResponse.json({ tables: [] });
-
-  const result = await client.from("tables").select("*").order("updated_at", { ascending: false });
-  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 400 });
-  return NextResponse.json({ tables: result.data ?? [] });
+  return withAdmin(request, async ({ client }) => {
+    const result = await client.from("tables")
+      .select("slug,name,updated_at,participants(count),rounds(round_number)")
+      .order("updated_at", { ascending: false });
+    if (result.error) return privateJson({ error: "Unable to load tables." }, 503);
+    return privateJson({ tables: (result.data ?? []).map((table) => ({
+      slug: table.slug, name: table.name, updatedAt: table.updated_at,
+      members: table.participants[0]?.count ?? 0,
+      round: Math.max(1, ...table.rounds.map((round) => round.round_number)),
+    })) });
+  });
 }

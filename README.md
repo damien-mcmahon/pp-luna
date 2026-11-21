@@ -4,16 +4,18 @@ Vegas-inspired realtime planning poker for teams.
 
 ## Run locally
 
+Use Node.js 22 or later.
+
 ```bash
 npm install
 npm run dev
 ```
 
-The app works without environment variables. In that mode tables are persisted in `localStorage`, a participant seat is persisted in a table-scoped cookie, and updates are synchronized between tabs with `BroadcastChannel` and storage events.
+The app works without environment variables as a **local demo only**. Tables and votes are persisted in `localStorage`, and tabs synchronize with `BroadcastChannel` and storage events. This is not a security boundary; do not use it for confidential votes. Admin access is disabled without hosted authentication.
 
-## Hosted persistence and realtime
+## Hosted persistence
 
-The production path uses Supabase Postgres and Supabase Realtime:
+The production path uses Supabase Postgres and Supabase Auth:
 
 1. Create a Supabase project.
 2. Run [`supabase/schema.sql`](./supabase/schema.sql) in the SQL editor.
@@ -23,11 +25,12 @@ The production path uses Supabase Postgres and Supabase Realtime:
    NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   ADMIN_REQUIRE_MFA=true
    ```
 
 4. Deploy the project to Vercel and add the same variables to the project settings.
 
-The browser subscribes to table, participant, round, and vote changes over Supabase Realtime. API route handlers use the service role only on the server to persist the normalized relational records. The local event/polling layer remains as a safe fallback if hosted configuration is unavailable.
+Hosted browsers poll a non-cacheable, redacted API every 1.5 seconds instead of subscribing to public Postgres changes. Raw table/vote reads are restricted to the server, other players' unrevealed estimates are hidden, and mutations require an authenticated seat. Hosted failures never authorize a local snapshot.
 
 For an existing Supabase project, run [`supabase/migrations/20261120_t_shirt_sizes.sql`](./supabase/migrations/20261120_t_shirt_sizes.sql) before deploying this version. New projects already include these changes in `schema.sql`.
 
@@ -43,10 +46,17 @@ For an existing Supabase project, run [`supabase/migrations/20261120_t_shirt_siz
 - The creator can deal, remove players, rename the room, copy the invite, and switch between participant and dealer mode.
 - Revealing counts down from 3, turns every card face up, and calculates table/team alignment, average score, and session coherence.
 - `Replay hand` keeps the task and deals a new vote. `Clear table` deals a new vote and clears the task.
-- `/admin` provides the prototype admin console. The seeded access is `admin / admin` as requested; replace this with real identity management before exposing it publicly.
+- `/admin` uses Supabase Auth, MFA, and an explicit administrator allowlist. There is no shared admin password.
 
 ## Checks
 
 ```bash
+npm test
 npm run build
 ```
+
+## Admin authentication rollout
+
+Follow [the admin-auth guide](./docs/admin-auth.md) before exposing this version. The separate database-workflow PR supplies CLI configuration, the baseline, and `db:migrate`; this PR supplies only the subsequent security migration and authentication/permission changes. Deployments must apply the security migration before running the secured app.
+
+Existing unsigned seats must be recreated; short legacy invite links are rotated. Admin provisioning and a staging test of the complete Auth/MFA flow are required. Existing critical/high Next.js advisories still need a separate supported-framework upgrade before production exposure.

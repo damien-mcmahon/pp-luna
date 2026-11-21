@@ -18,8 +18,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { createRemoteTable } from "@/lib/api";
-import { createTableRecord, getTables } from "@/lib/store";
+import { createRemoteTable, hostedTablesEnabled } from "@/lib/api";
+import { createTableRecord, getTables, saveTable } from "@/lib/store";
 import { DECKS, DeckType, TableMode, TableRecord } from "@/lib/types";
 
 const featureCards = [
@@ -68,6 +68,7 @@ export default function LandingPage() {
   const [recentTables, setRecentTables] = useState<TableRecord[]>([]);
   const [form, setForm] = useState({ tableName: "", creatorName: "", mode: "participant" as TableMode, deck: "fibonacci" as DeckType });
   const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     setRecentTables(getTables().slice(0, 3));
@@ -80,16 +81,26 @@ export default function LandingPage() {
     router.push(`/table/${encodeURIComponent(slug)}`);
   }
 
-  function submitCreate(event: FormEvent<HTMLFormElement>) {
+  async function submitCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (creating) return;
     if (!form.tableName.trim() || !form.creatorName.trim()) {
       setError("Give your table and your seat a name first.");
       return;
     }
 
-    const table = createTableRecord(form);
-    void createRemoteTable(table);
-    router.push(`/table/${table.slug}`);
+    setCreating(true);
+    setError("");
+    try {
+      const table = createTableRecord({ ...form, persist: !hostedTablesEnabled });
+      const remote = await createRemoteTable(table);
+      if (remote) saveTable(remote, { touch: false });
+      router.push(`/table/${table.slug}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to create table.");
+    } finally {
+      setCreating(false);
+    }
   }
 
   return (
@@ -212,7 +223,7 @@ export default function LandingPage() {
               <button type="button" className={form.mode === "dealer" ? "mode-option selected" : "mode-option"} onClick={() => setForm({ ...form, mode: "dealer" })}><span className="mode-radio">{form.mode === "dealer" && <i />}</span><span><b>Deal only</b><small>Run the reveal</small></span><Crown size={17} /></button>
             </div>
             {error && <div className="form-error">{error}</div>}
-            <button className="button button-primary modal-submit" type="submit">Open the table <ArrowRight size={17} /></button>
+            <button disabled={creating} className="button button-primary modal-submit" type="submit">{creating ? "Opening..." : "Open the table"} <ArrowRight size={17} /></button>
           </form>
           <div className="modal-note"><LockKeyhole size={13} /> Anyone with your private link can join.</div>
         </section>
